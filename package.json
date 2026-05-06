@@ -1,0 +1,10 @@
+{
+  "name": "dilema-rss",
+  "version": "1.0.0",
+  "scripts": {
+    "scrape": "bun run src/scraper.ts"
+  },
+  "dependencies": {
+    "node-html-parser": "^6.1.13"
+  }
+}
