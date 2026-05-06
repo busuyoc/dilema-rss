@@ -5,6 +5,7 @@
     "scrape": "bun run src/scraper.ts"
   },
   "dependencies": {
+    "fflate": "^0.8.2",
     "node-html-parser": "^6.1.13"
   }
 }

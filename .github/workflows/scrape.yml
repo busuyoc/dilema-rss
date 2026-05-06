@@ -28,6 +28,6 @@ jobs:
         run: |
           git config user.name "dilema-rss"
           git config user.email "bot@users.noreply.github.com"
-          git add feed.xml
+          git add feed.xml dilema-*.epub dilema-latest.epub
           git diff --staged --quiet && echo "No changes" || \
             git commit -m "feed: $(date -u +%Y-%m-%d)" && git push
