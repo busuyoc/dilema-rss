@@ -2,17 +2,50 @@ import { parse } from 'node-html-parser';
 import { zipSync, strToU8 } from 'fflate';
 
 const BASE = 'https://www.dilema.ro';
+const USER_AGENT = 'Mozilla/5.0 (compatible; dilema-rss/1.0)';
 
-const TAGS = [
-  'tema-saptaminii', 'editoriale-si-opinii',
-  'la-fata-timpului', 'la-fata-locului', 'la-singular-si-la-plural',
-  'din-polul-plus', 'bazar', 'contraintuitia', 'cuvinte-nepotrivite',
+// Single source of truth for sections. Order here = display order in the
+// EPUB cover, TOC and section grouping. Slug = first URL path segment
+// (e.g. /tema-saptaminii/...). Articles in slugs not listed here still
+// appear in the EPUB but bucketed at the end (sectionOrder fallback = 99).
+interface Section { slug: string; label: string; }
+const SECTIONS: Section[] = [
+  { slug: 'tema-saptaminii',         label: 'Tema săptămânii' },
+  { slug: 'editoriale-si-opinii',    label: 'Editoriale și opinii' },
+  { slug: 'la-fata-timpului',        label: 'La fața timpului' },
+  { slug: 'la-fata-locului',         label: 'La fața locului' },
+  { slug: 'pe-ce-lume-traim',        label: 'Pe ce lume trăim' },
+  { slug: 'la-singular-si-la-plural', label: 'La singular și la plural' },
+  { slug: 'societate',               label: 'Societate' },
+  { slug: 'din-polul-plus',          label: 'Din polul plus' },
+  { slug: 'caleidoscopie',           label: 'Caleidoscopie' },
+  { slug: 'carte',                   label: 'Carte' },
+  { slug: 'film',                    label: 'Film' },
+  { slug: 'muzica',                  label: 'Muzică' },
+  { slug: 'arte-vizuale',            label: 'Arte vizuale' },
+  { slug: 'arte-performative',       label: 'Arte performative' },
+];
+
+// Recurring column tags that aren't main sections but whose articles we want
+// to discover defensively (in case the homepage hides them). Discovery
+// crawls /tag/{slug} for SECTIONS + EXTRA_TAGS so we don't depend on layout.
+const EXTRA_TAGS = [
+  'bazar', 'contraintuitia', 'cuvinte-nepotrivite',
   'dilematograf', 'la-rascruce-de-ginduri', 'libertatea-de-impresie',
   'nici-asa-nici-altminteri', 'pe-de-alta-carte', 'portrete-din-mers',
   'prezentul-discontinuu', 'prof-viata-mea', 'regimul-artelor-si-munitiilor',
   'vamaiotii', 'viata-de-capital', 'virsta-medie', 'audio-si-n-am-cuvinte',
   'axa-dus-intors',
 ];
+const DISCOVERY_TAGS = [...SECTIONS.map(s => s.slug), ...EXTRA_TAGS];
+
+// Derived lookups
+const SECTION_LABELS: Record<string, string> = Object.fromEntries(
+  SECTIONS.map(s => [s.slug, s.label]),
+);
+const SECTION_ORDER_INDEX: Record<string, number> = Object.fromEntries(
+  SECTIONS.map((s, i) => [s.slug, i]),
+);
 
 const MONTHS: Record<string, number> = {
   ianuarie: 0, februarie: 1, martie: 2, aprilie: 3,
@@ -25,29 +58,8 @@ const MONTH_NAMES = [
   'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie',
 ];
 
-const SECTION_LABELS: Record<string, string> = {
-  'tema-saptaminii': 'Tema săptămânii',
-  'editoriale-si-opinii': 'Editoriale și opinii',
-  'la-fata-timpului': 'La față timpului',
-  'la-fata-locului': 'La fața locului',
-  'pe-ce-lume-traim': 'Pe ce lume trăim',
-  'la-singular-si-la-plural': 'La singular și la plural',
-  'societate': 'Societate',
-  'din-polul-plus': 'Din polul plus',
-  'caleidoscopie': 'Caleidoscopie',
-  'carte': 'Carte',
-  'film': 'Film',
-  'muzica': 'Muzică',
-  'arte-vizuale': 'Arte vizuale',
-  'arte-performative': 'Arte performative',
-};
-
-const SECTION_ORDER = Object.keys(SECTION_LABELS);
-
 async function fetchHtml(url: string): Promise<string> {
-  const r = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; dilema-rss/1.0)' },
-  });
+  const r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
   if (!r.ok) throw new Error(`${r.status} ${url}`);
   return r.text();
 }
@@ -72,6 +84,9 @@ function getISOWeek(date: Date): number {
   return 1 + Math.round(((d.getTime() - week1.getTime()) / 86_400_000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
 }
 
+// Weekly cadence + 1-day buffer: dilema publishes Thursday; the GitHub cron
+// fires Thursday 07:00 UTC. 8 days catches anything published in the last
+// week including off-cycle edits, without picking up the previous issue.
 function isRecent(date: Date, days = 8): boolean {
   return date >= new Date(Date.now() - days * 86_400_000);
 }
@@ -82,15 +97,7 @@ function escapeXml(s: string): string {
 }
 
 function sectionOrder(section: string): number {
-  const i = SECTION_ORDER.indexOf(section);
-  return i === -1 ? 99 : i;
-}
-
-// Make void elements self-closing for XHTML
-function toXhtml(html: string): string {
-  return html
-    .replace(/<(br|hr)(\s[^>]*)?>/gi, '<$1$2/>')
-    .replace(/<img([^>]*)(?<!\/)>/gi, '<img$1/>');
+  return SECTION_ORDER_INDEX[section] ?? 99;
 }
 
 const ARTICLE_RE = /href="(\/(?!autor\/|tag\/|abonament|formular|tilc-show|situatiunea)[a-z][a-z0-9-]*\/[a-z0-9-]{5,})"/g;
@@ -104,9 +111,13 @@ async function discoverUrls(): Promise<Set<string>> {
   process.stdout.write('Discovering: homepage');
   addFromHtml(await fetchHtml(BASE));
 
-  for (const tag of TAGS) {
+  for (const tag of DISCOVERY_TAGS) {
     process.stdout.write(` ${tag}`);
-    addFromHtml(await fetchHtml(`${BASE}/tag/${tag}`));
+    try {
+      addFromHtml(await fetchHtml(`${BASE}/tag/${tag}`));
+    } catch (e) {
+      console.warn(`\n  tag fetch failed for ${tag}: ${e instanceof Error ? e.message : e}`);
+    }
     await Bun.sleep(150);
   }
   process.stdout.write('\n');
@@ -124,16 +135,22 @@ interface Article {
   xhtml: string; // clean XHTML for EPUB — plain text paragraphs, guaranteed valid
 }
 
-async function fetchArticle(url: string): Promise<Article | null> {
+type FetchResult =
+  | { status: 'ok'; article: Article }
+  | { status: 'old' } // pre-isRecent, expected, silent
+  | { status: 'no-title' | 'no-date' | 'no-content' }; // unexpected, surface
+
+async function fetchArticle(url: string): Promise<FetchResult> {
   const raw = await fetchHtml(url);
   const root = parse(raw);
 
   const title = root.querySelector('h1.single_post_title_main')?.text?.trim();
-  if (!title) return null;
+  if (!title) return { status: 'no-title' };
 
   const dateText = root.querySelector('span.post-date')?.text?.replace(/[^\w\s,]/g, '').trim() ?? '';
   const date = parseRomanianDate(dateText);
-  if (!date || !isRecent(date)) return null;
+  if (!date) return { status: 'no-date' };
+  if (!isRecent(date)) return { status: 'old' };
 
   const subtitle = root.querySelector('p.post_subtitle_text')?.text?.trim() ?? '';
 
@@ -141,7 +158,7 @@ async function fetchArticle(url: string): Promise<Article | null> {
   const author = authorEl?.text?.trim() ?? 'Dilema Veche';
 
   const contentDiv = root.querySelector('div.post_content');
-  if (!contentDiv) return null;
+  if (!contentDiv) return { status: 'no-content' };
 
   // Extract featured image (first img with absolute src)
   let imageUrl: string | null = null;
@@ -165,7 +182,7 @@ async function fetchArticle(url: string): Promise<Article | null> {
     .join('\n');
 
   const section = new URL(url).pathname.split('/')[1] ?? '';
-  return { url, title, subtitle, author, date, section, imageUrl, xhtml };
+  return { status: 'ok', article: { url, title, subtitle, author, date, section, imageUrl, xhtml } };
 }
 
 // ── RSS ──────────────────────────────────────────────────────────────────────
@@ -181,8 +198,8 @@ function generateRSS(articles: Article[], buildDate: Date): string {
     return `
   <item>
     <title>${escapeXml(`${label} · ${a.title}`)}</title>
-    <link>${a.url}</link>
-    <guid isPermaLink="true">${a.url}</guid>
+    <link>${escapeXml(a.url)}</link>
+    <guid isPermaLink="true">${escapeXml(a.url)}</guid>
     <pubDate>${a.date.toUTCString()}</pubDate>
     <author>${escapeXml(a.author)}</author>
     <description>${escapeXml(`${a.author} — ${a.subtitle}`)}</description>
@@ -193,7 +210,7 @@ function generateRSS(articles: Article[], buildDate: Date): string {
 <rss version="2.0">
   <channel>
     <title>Dilema Veche</title>
-    <link>${BASE}</link>
+    <link>${escapeXml(BASE)}</link>
     <description>Articolele saptamanii</description>
     <language>ro</language>
     <lastBuildDate>${buildDate.toUTCString()}</lastBuildDate>
@@ -229,28 +246,41 @@ interface CoverImage {
 }
 
 async function fetchCoverImage(): Promise<CoverImage | null> {
+  let html: string;
   try {
-    const html = await fetchHtml(BASE);
-    const m = html.match(/(?:src|data-src)="([^"]*\/coperta\/[^"]+\.(?:jpg|jpeg|png|webp))"/i);
-    if (!m) return null;
-
-    let url = m[1];
-    if (url.startsWith('/')) url = BASE + url;
-    else if (!url.startsWith('http')) url = BASE + '/' + url;
-
-    const r = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; dilema-rss/1.0)' },
-    });
-    if (!r.ok) return null;
-
-    const data = new Uint8Array(await r.arrayBuffer());
-    const rawExt = (url.match(/\.(jpg|jpeg|png|webp)$/i)?.[1] ?? 'jpg').toLowerCase();
-    const ext = (rawExt === 'jpeg' ? 'jpg' : rawExt) as 'jpg' | 'png' | 'webp';
-    const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'image/webp';
-    return { data, ext, mime };
-  } catch {
+    html = await fetchHtml(BASE);
+  } catch (e) {
+    console.warn(`cover: homepage fetch failed: ${e instanceof Error ? e.message : e}`);
     return null;
   }
+
+  const m = html.match(/(?:src|data-src)="([^"]*\/coperta\/[^"]+\.(?:jpg|jpeg|png|webp))"/i);
+  if (!m) {
+    console.warn('cover: no /coperta/ image URL on homepage');
+    return null;
+  }
+
+  let url = m[1];
+  if (url.startsWith('/')) url = BASE + url;
+  else if (!url.startsWith('http')) url = BASE + '/' + url;
+
+  let r: Response;
+  try {
+    r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  } catch (e) {
+    console.warn(`cover: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+  if (!r.ok) {
+    console.warn(`cover: ${r.status} for ${url}`);
+    return null;
+  }
+
+  const data = new Uint8Array(await r.arrayBuffer());
+  const rawExt = (url.match(/\.(jpg|jpeg|png|webp)$/i)?.[1] ?? 'jpg').toLowerCase();
+  const ext = (rawExt === 'jpeg' ? 'jpg' : rawExt) as 'jpg' | 'png' | 'webp';
+  const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'image/webp';
+  return { data, ext, mime };
 }
 
 function xhtmlPage(title: string, body: string): Uint8Array {
@@ -270,6 +300,9 @@ ${body}
 
 function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | null): Uint8Array {
   const week = getISOWeek(buildDate).toString().padStart(2, '0');
+  // UID is week-stable so re-runs in the same week update the same book
+  // (Calibre / Apple Books dedup by uid). Title carries the full build date
+  // so users can still tell two builds apart visually.
   const uid = `dilema-${buildDate.getFullYear()}-W${week}`;
   const dateLabel = formatRomanianDate(buildDate);
   const isoDate = buildDate.toISOString().slice(0, 10);
@@ -372,8 +405,7 @@ ${navItems}
     <dc:language>ro</dc:language>
     <dc:date>${isoDate}</dc:date>
     <dc:creator>dilema.ro</dc:creator>
-    <meta property="dcterms:modified">${buildDate.toISOString().replace(/\.\d+Z$/, 'Z')}</meta>
-    ${coverMetaCompat}
+    <meta property="dcterms:modified">${buildDate.toISOString().replace(/\.\d+Z$/, 'Z')}</meta>${coverMetaCompat ? '\n    ' + coverMetaCompat : ''}
   </metadata>
   <manifest>
     ${manifest.join('\n    ')}
@@ -404,16 +436,28 @@ async function main() {
   console.log(`Discovered ${urls.size} candidate URLs`);
 
   const articles: Article[] = [];
+  let oldCount = 0;
+  const unexpected: { url: string; reason: string }[] = [];
   let i = 0;
   for (const url of urls) {
-    process.stdout.write(`\r[${++i}/${urls.size}] ${url.slice(BASE.length)}${' '.repeat(20)}`);
+    process.stdout.write(`\r[${++i}/${urls.size}] ${url.slice(BASE.length)}${' '.repeat(40)}`);
     try {
-      const article = await fetchArticle(url);
-      if (article) articles.push(article);
-    } catch { /* skip */ }
+      const r = await fetchArticle(url);
+      if (r.status === 'ok') articles.push(r.article);
+      else if (r.status === 'old') oldCount++;
+      else unexpected.push({ url, reason: r.status });
+    } catch (e) {
+      unexpected.push({ url, reason: e instanceof Error ? e.message : String(e) });
+    }
     await Bun.sleep(150);
   }
   process.stdout.write('\n');
+
+  console.log(`Filtered: ${articles.length} recent, ${oldCount} older (skipped silently)`);
+  if (unexpected.length > 0) {
+    console.warn(`Unexpected skips (${unexpected.length}):`);
+    unexpected.forEach(s => console.warn(`  ${s.url.slice(BASE.length)} — ${s.reason}`));
+  }
 
   console.log(`This week: ${articles.length} articles`);
   articles
