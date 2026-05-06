@@ -291,20 +291,20 @@ function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | 
   const manifest: string[] = [
     '<item id="style" href="style.css" media-type="text/css"/>',
     '<item id="nav" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
-    '<item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"/>',
+    '<item id="titlepage" href="cover.xhtml" media-type="application/xhtml+xml"/>',
   ];
-  const spine: string[] = ['<itemref idref="cover-page"/>', '<itemref idref="nav"/>'];
+  const spine: string[] = ['<itemref idref="titlepage"/>', '<itemref idref="nav"/>'];
 
-  // Cover image. Use id="cover" (canonical EPUB 2 convention) AND properties="cover-image"
-  // (EPUB 3) so every reader, including KOReader/crengine, picks it up.
+  // Cover image. PocketBook OS picks up id="cover-image" + properties="cover-image";
+  // KOReader/crengine reads <meta name="cover"> (EPUB 2 fallback). Provide both.
   let coverImageRef = '';
   let coverMetaCompat = '';
   if (cover) {
     const coverFile = `cover.${cover.ext}`;
     files[`OEBPS/${coverFile}`] = [cover.data, { level: 0 }]; // already compressed
-    manifest.push(`<item id="cover" href="${coverFile}" media-type="${cover.mime}" properties="cover-image"/>`);
+    manifest.push(`<item id="cover-image" href="${coverFile}" media-type="${cover.mime}" properties="cover-image"/>`);
     coverImageRef = coverFile;
-    coverMetaCompat = '<meta name="cover" content="cover"/>';
+    coverMetaCompat = '<meta name="cover" content="cover-image"/>';
   }
 
   // cover.xhtml: just the image stretched (or text fallback if image missing)
@@ -381,9 +381,6 @@ ${navItems}
   <spine>
     ${spine.join('\n    ')}
   </spine>
-  <guide>
-    <reference type="cover" title="Coperta" href="cover.xhtml"/>
-  </guide>
 </package>`), { level: 6 }];
 
   // META-INF
