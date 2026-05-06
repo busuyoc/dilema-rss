@@ -168,23 +168,18 @@ function generateRSS(articles: Article[], buildDate: Date): string {
     const label = SECTION_LABELS[a.section] ?? a.section;
     return `
   <item>
-    <title><![CDATA[${a.title}]]></title>
+    <title><![CDATA[${label} · ${a.title}]]></title>
     <link>${a.url}</link>
     <guid isPermaLink="true">${a.url}</guid>
     <pubDate>${a.date.toUTCString()}</pubDate>
     <author>${escapeXml(a.author)}</author>
-    <category>${escapeXml(label)}</category>
-    <description><![CDATA[${a.subtitle}]]></description>
-    <content:encoded><![CDATA[<p><strong>${escapeXml(label)}</strong> · <em>${escapeXml(a.author)}</em></p>
-<p><em>${a.subtitle}</em></p>
-${a.html}]]></content:encoded>
+    <description><![CDATA[${a.author} — ${a.subtitle}]]></description>
   </item>`;
   }).join('');
 
   const feedUrl = process.env.FEED_URL ?? '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
-  xmlns:content="http://purl.org/rss/1.0/modules/content/"
   xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Dilema Veche – numărul curent</title>
