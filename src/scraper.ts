@@ -168,26 +168,23 @@ function generateRSS(articles: Article[], buildDate: Date): string {
     const label = SECTION_LABELS[a.section] ?? a.section;
     return `
   <item>
-    <title><![CDATA[${label} · ${a.title}]]></title>
+    <title>${escapeXml(`${label} · ${a.title}`)}</title>
     <link>${a.url}</link>
     <guid isPermaLink="true">${a.url}</guid>
     <pubDate>${a.date.toUTCString()}</pubDate>
     <author>${escapeXml(a.author)}</author>
-    <description><![CDATA[${a.author} — ${a.subtitle}]]></description>
+    <description>${escapeXml(`${a.author} — ${a.subtitle}`)}</description>
   </item>`;
   }).join('');
 
-  const feedUrl = process.env.FEED_URL ?? '';
   return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0"
-  xmlns:atom="http://www.w3.org/2005/Atom">
+<rss version="2.0">
   <channel>
-    <title>Dilema Veche – numărul curent</title>
+    <title>Dilema Veche</title>
     <link>${BASE}</link>
-    <description>Articolele săptămânii, pentru citit pe e-reader</description>
+    <description>Articolele saptamanii</description>
     <language>ro</language>
     <lastBuildDate>${buildDate.toUTCString()}</lastBuildDate>
-    ${feedUrl ? `<atom:link href="${feedUrl}" rel="self" type="application/rss+xml"/>` : ''}
 ${items}
   </channel>
 </rss>`;
