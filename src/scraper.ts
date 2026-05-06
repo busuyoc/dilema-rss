@@ -119,7 +119,8 @@ interface Article {
   author: string;
   date: Date;
   section: string;
-  html: string;
+  imageUrl: string | null;
+  xhtml: string; // clean XHTML for EPUB — plain text paragraphs, guaranteed valid
 }
 
 async function fetchArticle(url: string): Promise<Article | null> {
@@ -141,19 +142,29 @@ async function fetchArticle(url: string): Promise<Article | null> {
   const contentDiv = root.querySelector('div.post_content');
   if (!contentDiv) return null;
 
-  // Make image src absolute (keep images)
-  contentDiv.querySelectorAll('img').forEach(el => {
-    const src = el.getAttribute('src') ?? '';
-    if (src.startsWith('/')) el.setAttribute('src', BASE + src);
-    else if (!src.startsWith('http')) el.remove();
-  });
+  // Extract featured image (first img with absolute src)
+  let imageUrl: string | null = null;
+  const firstImg = contentDiv.querySelector('img');
+  if (firstImg) {
+    const src = firstImg.getAttribute('src') ?? '';
+    imageUrl = src.startsWith('/') ? BASE + src : src.startsWith('http') ? src : null;
+  }
 
-  const html = contentDiv.querySelectorAll('p, h2, h3, blockquote')
-    .map(el => el.outerHTML)
+  // Build clean XHTML: plain text per block, no raw HTML from the site.
+  // This avoids HTML entities, unclosed void elements, and other XHTML issues.
+  const xhtml = contentDiv.querySelectorAll('p, h2, h3, blockquote')
+    .map(el => {
+      const text = el.text.trim();
+      if (!text) return '';
+      const tag = el.tagName.toLowerCase() === 'blockquote' ? 'blockquote' :
+                  el.tagName.toLowerCase().startsWith('h') ? el.tagName.toLowerCase() : 'p';
+      return `<${tag}>${escapeXml(text)}</${tag}>`;
+    })
+    .filter(s => s.length > 0)
     .join('\n');
 
   const section = new URL(url).pathname.split('/')[1] ?? '';
-  return { url, title, subtitle, author, date, section, html };
+  return { url, title, subtitle, author, date, section, imageUrl, xhtml };
 }
 
 // ── RSS ──────────────────────────────────────────────────────────────────────
@@ -262,12 +273,18 @@ function generateEPUB(articles: Article[], buildDate: Date): Uint8Array {
     const label = SECTION_LABELS[section] ?? section;
     const id = `s${i}`;
 
-    const body = sectionArticles.map(a => `
+    const body = sectionArticles.map(a => {
+      const img = a.imageUrl
+        ? `<p><img src="${a.imageUrl}" alt=""/></p>`
+        : '';
+      return `
 <h2>${escapeXml(a.title)}</h2>
 <p class="subtitle">${escapeXml(a.subtitle)}</p>
 <p class="meta">${escapeXml(a.author)}</p>
-${toXhtml(a.html)}
-<hr/>`).join('\n');
+${img}
+${a.xhtml}
+<hr/>`;
+    }).join('\n');
 
     files[`OEBPS/${id}.xhtml`] = [xhtmlPage(label, `<h1>${escapeXml(label)}</h1>\n${body}`), { level: 6 }];
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
