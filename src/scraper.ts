@@ -4,6 +4,7 @@ import { zipSync, strToU8 } from 'fflate';
 const BASE = 'https://www.dilema.ro';
 
 const TAGS = [
+  'tema-saptaminii', 'editoriale-si-opinii',
   'la-fata-timpului', 'la-fata-locului', 'la-singular-si-la-plural',
   'din-polul-plus', 'bazar', 'contraintuitia', 'cuvinte-nepotrivite',
   'dilematograf', 'la-rascruce-de-ginduri', 'libertatea-de-impresie',
@@ -205,17 +206,18 @@ ${items}
 
 const EPUB_CSS = `
 body { font-family: Georgia, serif; line-height: 1.7; margin: 1.5em 1em; }
-h1 { font-size: 1.5em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
-h2 { font-size: 1.2em; margin-top: 2.5em; margin-bottom: 0.2em; }
+h1 { font-size: 1.5em; margin-top: 0.5em; margin-bottom: 0.2em; }
+h2 { font-size: 1.2em; margin-top: 2em; }
 h3 { font-size: 1em; margin-top: 1.5em; }
-.subtitle { font-style: italic; font-size: 1.05em; margin: 0.3em 0 0.5em; }
+.subtitle { font-style: italic; font-size: 1.05em; margin: 0.3em 0 0.5em; color: #444; }
 .meta { font-size: 0.85em; color: #666; margin-bottom: 1.5em; border-bottom: 1px solid #eee; padding-bottom: 0.8em; }
-.section-label { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.05em; color: #888; }
-img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+.section-label { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 0.3em; }
+.article-img img, .content img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
 blockquote { border-left: 3px solid #ccc; padding-left: 1em; margin-left: 0; font-style: italic; }
-hr { border: none; border-top: 1px solid #ddd; margin: 2em 0; }
-.cover { text-align: center; padding: 3em 1em; }
-.cover h1 { border: none; font-size: 2em; }
+.cover { text-align: center; padding: 4em 1em; }
+.cover h1 { font-size: 2.2em; }
+.cover-date { font-size: 1.3em; margin-top: 0.5em; }
+.cover-meta { font-size: 0.9em; color: #666; }
 `.trim();
 
 function xhtmlPage(title: string, body: string): Uint8Array {
@@ -239,16 +241,18 @@ function generateEPUB(articles: Article[], buildDate: Date): Uint8Array {
   const dateLabel = formatRomanianDate(buildDate);
   const isoDate = buildDate.toISOString().slice(0, 10);
 
-  // Group by section, preserving SECTION_ORDER
-  const grouped = new Map<string, Article[]>();
-  const orderedSections: string[] = [];
-  for (const a of [...articles].sort((a, b) => sectionOrder(a.section) - sectionOrder(b.section))) {
-    if (!grouped.has(a.section)) {
-      grouped.set(a.section, []);
-      orderedSections.push(a.section);
-    }
-    grouped.get(a.section)!.push(a);
-  }
+  // Sort: section order first, then title within section
+  const sorted = [...articles].sort((a, b) => {
+    const so = sectionOrder(a.section) - sectionOrder(b.section);
+    return so !== 0 ? so : a.title.localeCompare(b.title, 'ro');
+  });
+
+  // Build section groups preserving sorted order
+  const sectionGroups = new Map<string, number[]>(); // section → global indices
+  sorted.forEach((a, idx) => {
+    if (!sectionGroups.has(a.section)) sectionGroups.set(a.section, []);
+    sectionGroups.get(a.section)!.push(idx);
+  });
 
   const files: Record<string, [Uint8Array, { level: number }]> = {};
   const manifest: string[] = [
@@ -263,46 +267,49 @@ function generateEPUB(articles: Article[], buildDate: Date): Uint8Array {
 <div class="cover">
   <p class="section-label">revistă săptămânală</p>
   <h1>Dilema Veche</h1>
-  <p style="font-size:1.3em">${escapeXml(dateLabel)}</p>
-  <p style="font-size:0.9em; color:#666">${articles.length} articole · ${orderedSections.length} secțiuni</p>
+  <p class="cover-date">${escapeXml(dateLabel)}</p>
+  <p class="cover-meta">${sorted.length} articole · ${sectionGroups.size} secțiuni</p>
 </div>`), { level: 6 }];
 
-  // Section pages
-  orderedSections.forEach((section, i) => {
-    const sectionArticles = grouped.get(section)!;
-    const label = SECTION_LABELS[section] ?? section;
-    const id = `s${i}`;
-
-    const body = sectionArticles.map(a => {
-      const img = a.imageUrl
-        ? `<p><img src="${a.imageUrl}" alt=""/></p>`
-        : '';
-      return `
-<h2>${escapeXml(a.title)}</h2>
-<p class="subtitle">${escapeXml(a.subtitle)}</p>
-<p class="meta">${escapeXml(a.author)}</p>
-${img}
+  // One XHTML per article
+  sorted.forEach((a, idx) => {
+    const id = `a${idx}`;
+    const label = SECTION_LABELS[a.section] ?? a.section;
+    const imgHtml = a.imageUrl
+      ? `<p class="article-img"><img src="${escapeXml(a.imageUrl)}" alt=""/></p>`
+      : '';
+    const subtitleHtml = a.subtitle
+      ? `<p class="subtitle">${escapeXml(a.subtitle)}</p>`
+      : '';
+    const body = `<div class="article">
+  <p class="section-label">${escapeXml(label)}</p>
+  <h1>${escapeXml(a.title)}</h1>
+  ${subtitleHtml}
+  <p class="meta">${escapeXml(a.author)} · ${escapeXml(formatRomanianDate(a.date))}</p>
+  ${imgHtml}
+  <div class="content">
 ${a.xhtml}
-<hr/>`;
-    }).join('\n');
-
-    files[`OEBPS/${id}.xhtml`] = [xhtmlPage(label, `<h1>${escapeXml(label)}</h1>\n${body}`), { level: 6 }];
+  </div>
+</div>`;
+    files[`OEBPS/${id}.xhtml`] = [xhtmlPage(a.title, body), { level: 6 }];
     manifest.push(`<item id="${id}" href="${id}.xhtml" media-type="application/xhtml+xml"/>`);
     spine.push(`<itemref idref="${id}"/>`);
   });
 
-  // Nav / ToC
-  const navItems = orderedSections.map((section, i) => {
+  // Nested TOC: sections → articles
+  const navItems = Array.from(sectionGroups.entries()).map(([section, indices]) => {
     const label = SECTION_LABELS[section] ?? section;
-    const arts = grouped.get(section)!;
-    return `<li><a href="s${i}.xhtml">${escapeXml(label)}</a> <span style="font-size:0.85em;color:#888">(${arts.length})</span></li>`;
-  }).join('\n      ');
+    const subItems = indices.map(idx =>
+      `        <li><a href="a${idx}.xhtml">${escapeXml(sorted[idx].title)}</a></li>`
+    ).join('\n');
+    return `    <li>\n      <span>${escapeXml(label)}</span>\n      <ol>\n${subItems}\n      </ol>\n    </li>`;
+  }).join('\n');
 
   files['OEBPS/toc.xhtml'] = [xhtmlPage('Cuprins', `
 <nav xmlns:epub="http://www.idpf.org/2007/ops" epub:type="toc">
   <h1>Cuprins</h1>
   <ol>
-      ${navItems}
+${navItems}
   </ol>
 </nav>`), { level: 6 }];
 
@@ -337,7 +344,6 @@ ${a.xhtml}
 </container>`), { level: 6 }];
 
   return zipSync({
-    // mimetype must be first and uncompressed
     mimetype: [strToU8('application/epub+zip'), { level: 0 }],
     ...files,
   });
