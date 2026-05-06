@@ -205,9 +205,9 @@ ${items}
 // ── EPUB ─────────────────────────────────────────────────────────────────────
 
 const EPUB_CSS = `
-body { font-family: Georgia, serif; line-height: 1.7; margin: 1.5em 1em; }
-h1 { font-size: 1.5em; margin-top: 0.5em; margin-bottom: 0.2em; }
-h2 { font-size: 1.2em; margin-top: 2em; }
+body { font-family: Georgia, serif; line-height: 1.7; margin: 1.5em 1em; text-align: left; }
+h1 { font-size: 1.3em; margin-top: 0.5em; margin-bottom: 0.3em; line-height: 1.25; text-align: left; font-weight: bold; }
+h2 { font-size: 1.2em; margin-top: 2em; text-align: left; }
 h3 { font-size: 1em; margin-top: 1.5em; }
 .subtitle { font-style: italic; font-size: 1.05em; margin: 0.3em 0 0.5em; color: #444; }
 .meta { font-size: 0.85em; color: #666; margin-bottom: 1.5em; border-bottom: 1px solid #eee; padding-bottom: 0.8em; }
@@ -291,20 +291,20 @@ function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | 
   const manifest: string[] = [
     '<item id="style" href="style.css" media-type="text/css"/>',
     '<item id="nav" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
-    '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>',
+    '<item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"/>',
   ];
-  const spine: string[] = ['<itemref idref="cover"/>', '<itemref idref="nav"/>'];
+  const spine: string[] = ['<itemref idref="cover-page"/>', '<itemref idref="nav"/>'];
 
-  // Cover image (real magazine cover from dilema.ro). Embed as binary asset and
-  // reference via <item properties="cover-image"> + EPUB 2 <meta name="cover">.
+  // Cover image. Use id="cover" (canonical EPUB 2 convention) AND properties="cover-image"
+  // (EPUB 3) so every reader, including KOReader/crengine, picks it up.
   let coverImageRef = '';
   let coverMetaCompat = '';
   if (cover) {
     const coverFile = `cover.${cover.ext}`;
     files[`OEBPS/${coverFile}`] = [cover.data, { level: 0 }]; // already compressed
-    manifest.push(`<item id="cover-image" href="${coverFile}" media-type="${cover.mime}" properties="cover-image"/>`);
+    manifest.push(`<item id="cover" href="${coverFile}" media-type="${cover.mime}" properties="cover-image"/>`);
     coverImageRef = coverFile;
-    coverMetaCompat = '<meta name="cover" content="cover-image"/>';
+    coverMetaCompat = '<meta name="cover" content="cover"/>';
   }
 
   // cover.xhtml: just the image stretched (or text fallback if image missing)
@@ -332,7 +332,7 @@ function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | 
   <p class="section-label">${escapeXml(label)}</p>
   <h1>${escapeXml(a.title)}</h1>
   ${subtitleHtml}
-  <p class="meta">${escapeXml(a.author)} · ${escapeXml(formatRomanianDate(a.date))}</p>
+  <p class="meta">${escapeXml(a.author)} — ${escapeXml(formatRomanianDate(a.date))}</p>
   ${imgHtml}
   <div class="content">
 ${a.xhtml}
@@ -381,6 +381,9 @@ ${navItems}
   <spine>
     ${spine.join('\n    ')}
   </spine>
+  <guide>
+    <reference type="cover" title="Coperta" href="cover.xhtml"/>
+  </guide>
 </package>`), { level: 6 }];
 
   // META-INF
