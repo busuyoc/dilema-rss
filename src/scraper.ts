@@ -218,7 +218,40 @@ blockquote { border-left: 3px solid #ccc; padding-left: 1em; margin-left: 0; fon
 .cover h1 { font-size: 2.2em; }
 .cover-date { font-size: 1.3em; margin-top: 0.5em; }
 .cover-meta { font-size: 0.9em; color: #666; }
+.cover-image { margin: 0; padding: 0; text-align: center; }
+.cover-image img { max-width: 100%; max-height: 100vh; height: auto; display: block; margin: 0 auto; }
 `.trim();
+
+interface CoverImage {
+  data: Uint8Array;
+  ext: 'jpg' | 'png' | 'webp';
+  mime: string;
+}
+
+async function fetchCoverImage(): Promise<CoverImage | null> {
+  try {
+    const html = await fetchHtml(BASE);
+    const m = html.match(/(?:src|data-src)="([^"]*\/coperta\/[^"]+\.(?:jpg|jpeg|png|webp))"/i);
+    if (!m) return null;
+
+    let url = m[1];
+    if (url.startsWith('/')) url = BASE + url;
+    else if (!url.startsWith('http')) url = BASE + '/' + url;
+
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; dilema-rss/1.0)' },
+    });
+    if (!r.ok) return null;
+
+    const data = new Uint8Array(await r.arrayBuffer());
+    const rawExt = (url.match(/\.(jpg|jpeg|png|webp)$/i)?.[1] ?? 'jpg').toLowerCase();
+    const ext = (rawExt === 'jpeg' ? 'jpg' : rawExt) as 'jpg' | 'png' | 'webp';
+    const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'image/webp';
+    return { data, ext, mime };
+  } catch {
+    return null;
+  }
+}
 
 function xhtmlPage(title: string, body: string): Uint8Array {
   return strToU8(`<?xml version="1.0" encoding="UTF-8"?>
@@ -235,7 +268,7 @@ ${body}
 </html>`);
 }
 
-function generateEPUB(articles: Article[], buildDate: Date): Uint8Array {
+function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | null): Uint8Array {
   const week = getISOWeek(buildDate).toString().padStart(2, '0');
   const uid = `dilema-${buildDate.getFullYear()}-W${week}`;
   const dateLabel = formatRomanianDate(buildDate);
@@ -262,14 +295,28 @@ function generateEPUB(articles: Article[], buildDate: Date): Uint8Array {
   ];
   const spine: string[] = ['<itemref idref="cover"/>', '<itemref idref="nav"/>'];
 
-  // Cover
-  files['OEBPS/cover.xhtml'] = [xhtmlPage('Dilema Veche', `
-<div class="cover">
+  // Cover image (real magazine cover from dilema.ro). Embed as binary asset and
+  // reference via <item properties="cover-image"> + EPUB 2 <meta name="cover">.
+  let coverImageRef = '';
+  let coverMetaCompat = '';
+  if (cover) {
+    const coverFile = `cover.${cover.ext}`;
+    files[`OEBPS/${coverFile}`] = [cover.data, { level: 0 }]; // already compressed
+    manifest.push(`<item id="cover-image" href="${coverFile}" media-type="${cover.mime}" properties="cover-image"/>`);
+    coverImageRef = coverFile;
+    coverMetaCompat = '<meta name="cover" content="cover-image"/>';
+  }
+
+  // cover.xhtml: just the image stretched (or text fallback if image missing)
+  const coverBody = coverImageRef
+    ? `<div class="cover-image"><img src="${coverImageRef}" alt="Coperta Dilema Veche"/></div>`
+    : `<div class="cover">
   <p class="section-label">revistă săptămânală</p>
   <h1>Dilema Veche</h1>
   <p class="cover-date">${escapeXml(dateLabel)}</p>
   <p class="cover-meta">${sorted.length} articole · ${sectionGroups.size} secțiuni</p>
-</div>`), { level: 6 }];
+</div>`;
+  files['OEBPS/cover.xhtml'] = [xhtmlPage('Dilema Veche', coverBody), { level: 6 }];
 
   // One XHTML per article
   sorted.forEach((a, idx) => {
@@ -326,6 +373,7 @@ ${navItems}
     <dc:date>${isoDate}</dc:date>
     <dc:creator>dilema.ro</dc:creator>
     <meta property="dcterms:modified">${buildDate.toISOString().replace(/\.\d+Z$/, 'Z')}</meta>
+    ${coverMetaCompat}
   </metadata>
   <manifest>
     ${manifest.join('\n    ')}
@@ -379,7 +427,11 @@ async function main() {
   await Bun.write('feed.xml', generateRSS(articles, now));
   console.log('Written feed.xml');
 
-  const epub = generateEPUB(articles, now);
+  process.stdout.write('Fetching magazine cover... ');
+  const cover = await fetchCoverImage();
+  console.log(cover ? `${cover.ext} ${(cover.data.length / 1024).toFixed(0)} KB` : 'not available (using text fallback)');
+
+  const epub = generateEPUB(articles, now, cover);
   await Bun.write(epubName, epub);
   await Bun.write('dilema-latest.epub', epub);
   console.log(`Written ${epubName} + dilema-latest.epub (${(epub.length / 1024).toFixed(0)} KB)`);
