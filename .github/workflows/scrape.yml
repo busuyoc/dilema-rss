@@ -2,7 +2,7 @@ name: Scrape Dilema Veche
 
 on:
   schedule:
-    - cron: '0 7 * * 4'  # joi 07:00 UTC = 09:00 ora României
+    - cron: '0 10 * * 4'  # joi 10:00 UTC = 12:00 RO iarna / 13:00 RO vara (DST)
   workflow_dispatch:
 
 permissions:

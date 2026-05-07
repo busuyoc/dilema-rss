@@ -1,10 +1,10 @@
 # Dilema RSS
 
-Scraper săptămânal pentru articolele din **Dilema Veche**. Generează un feed RSS și un EPUB (cu coperta oficială și sumar pe secțiuni), livrate prin GitHub Pages. Plugin KOReader le sincronizează automat pe device — joi dimineață ai noul număr deja descărcat.
+Scraper săptămânal pentru articolele din **Dilema Veche**. Generează un feed RSS și un EPUB (cu coperta oficială și sumar pe secțiuni), livrate prin GitHub Pages. Plugin KOReader le sincronizează automat pe device — joi după-amiază ai noul număr deja descărcat.
 
 ## Cum funcționează
 
-Joi 09:00 RO, GitHub Actions rulează:
+Joi ~13:00 RO, GitHub Actions rulează:
 - Scrape `dilema.ro` → ~27 articole din săptămâna curentă
 - Generează `feed.xml` (RSS 2.0) + `dilema-latest.epub`
 - Publică pe GitHub Pages

@@ -84,11 +84,21 @@ function getISOWeek(date: Date): number {
   return 1 + Math.round(((d.getTime() - week1.getTime()) / 86_400_000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
 }
 
-// Weekly cadence + 1-day buffer: dilema publishes Thursday; the GitHub cron
-// fires Thursday 07:00 UTC. 8 days catches anything published in the last
-// week including off-cycle edits, without picking up the previous issue.
-function isRecent(date: Date, days = 8): boolean {
-  return date >= new Date(Date.now() - days * 86_400_000);
+// Dilema publishes on Thursdays. "This issue" = articles published since
+// the most recent Thursday 00:00 local time. Isolates exactly one issue
+// regardless of how many days have elapsed, avoiding the dual-issue bleed
+// that an N-day rolling window causes when the cron fires close to the boundary.
+function getMostRecentThursday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  // 0=Sun,1=Mon,...,4=Thu,5=Fri,6=Sat → days since last Thursday
+  const daysBack = (d.getDay() + 3) % 7;
+  d.setDate(d.getDate() - daysBack);
+  return d;
+}
+
+function isThisIssue(date: Date): boolean {
+  return date >= getMostRecentThursday();
 }
 
 function escapeXml(s: string): string {
@@ -150,7 +160,7 @@ async function fetchArticle(url: string): Promise<FetchResult> {
   const dateText = root.querySelector('span.post-date')?.text?.replace(/[^\w\s,]/g, '').trim() ?? '';
   const date = parseRomanianDate(dateText);
   if (!date) return { status: 'no-date' };
-  if (!isRecent(date)) return { status: 'old' };
+  if (!isThisIssue(date)) return { status: 'old' };
 
   const subtitle = root.querySelector('p.post_subtitle_text')?.text?.trim() ?? '';
 
