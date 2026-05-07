@@ -27,17 +27,16 @@ const SECTIONS: Section[] = [
 ];
 
 // Recurring column tags that aren't main sections but whose articles we want
-// to discover defensively (in case the homepage hides them). Discovery
-// crawls /tag/{slug} for SECTIONS + EXTRA_TAGS so we don't depend on layout.
+// to discover via /tag/{slug}. These tags are reverse-chronological and
+// reliably surface the most recent article for each column.
 const EXTRA_TAGS = [
   'bazar', 'contraintuitia', 'cuvinte-nepotrivite',
-  'dilematograf', 'la-rascruce-de-ginduri', 'libertatea-de-impresie',
-  'nici-asa-nici-altminteri', 'pe-de-alta-carte', 'portrete-din-mers',
-  'prezentul-discontinuu', 'prof-viata-mea', 'regimul-artelor-si-munitiilor',
-  'vamaiotii', 'viata-de-capital', 'virsta-medie', 'audio-si-n-am-cuvinte',
-  'axa-dus-intors',
+  'dilematograf', 'la-drept-vorbind', 'la-rascruce-de-ginduri',
+  'libertatea-de-impresie', 'nici-asa-nici-altminteri', 'pe-de-alta-carte',
+  'portrete-din-mers', 'prezentul-discontinuu', 'prof-viata-mea',
+  'regimul-artelor-si-munitiilor', 'vamaiotii', 'viata-de-capital',
+  'virsta-medie', 'audio-si-n-am-cuvinte', 'axa-dus-intors',
 ];
-const DISCOVERY_TAGS = [...SECTIONS.map(s => s.slug), ...EXTRA_TAGS];
 
 // Derived lookups
 const SECTION_LABELS: Record<string, string> = Object.fromEntries(
@@ -114,18 +113,23 @@ async function discoverUrls(): Promise<Set<string>> {
   process.stdout.write('Discovering: homepage');
   addFromHtml(await fetchHtml(BASE));
 
-  // SECTIONS have articles at /{slug} (section archive), not /tag/{slug}.
+  // SECTIONS: crawl both the section archive (/{slug}) and the tag page
+  // (/tag/{slug}). Section archives show 42 articles alphabetically — recent
+  // articles appear there only if their slugs fall in the shown range. Tag
+  // pages are reverse-chronological, guaranteeing the current week's article
+  // is always the first result.
   for (const s of SECTIONS) {
     process.stdout.write(` ${s.slug}`);
     try {
       addFromHtml(await fetchHtml(`${BASE}/${s.slug}`));
+      addFromHtml(await fetchHtml(`${BASE}/tag/${s.slug}`));
     } catch (e) {
       console.warn(`\n  section fetch failed for ${s.slug}: ${e instanceof Error ? e.message : e}`);
     }
     await Bun.sleep(150);
   }
 
-  // EXTRA_TAGS are recurring columns without a section page; use /tag/{slug}.
+  // EXTRA_TAGS: recurring columns with no section archive; /tag/{slug} only.
   for (const tag of EXTRA_TAGS) {
     process.stdout.write(` ${tag}`);
     try {
