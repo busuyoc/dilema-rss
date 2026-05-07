@@ -114,7 +114,19 @@ async function discoverUrls(): Promise<Set<string>> {
   process.stdout.write('Discovering: homepage');
   addFromHtml(await fetchHtml(BASE));
 
-  for (const tag of DISCOVERY_TAGS) {
+  // SECTIONS have articles at /{slug} (section archive), not /tag/{slug}.
+  for (const s of SECTIONS) {
+    process.stdout.write(` ${s.slug}`);
+    try {
+      addFromHtml(await fetchHtml(`${BASE}/${s.slug}`));
+    } catch (e) {
+      console.warn(`\n  section fetch failed for ${s.slug}: ${e instanceof Error ? e.message : e}`);
+    }
+    await Bun.sleep(150);
+  }
+
+  // EXTRA_TAGS are recurring columns without a section page; use /tag/{slug}.
+  for (const tag of EXTRA_TAGS) {
     process.stdout.write(` ${tag}`);
     try {
       addFromHtml(await fetchHtml(`${BASE}/tag/${tag}`));
@@ -123,6 +135,7 @@ async function discoverUrls(): Promise<Set<string>> {
     }
     await Bun.sleep(150);
   }
+
   process.stdout.write('\n');
   return urls;
 }
