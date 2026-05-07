@@ -24,6 +24,7 @@ const SECTIONS: Section[] = [
   { slug: 'muzica',                  label: 'Muzică' },
   { slug: 'arte-vizuale',            label: 'Arte vizuale' },
   { slug: 'arte-performative',       label: 'Arte performative' },
+  { slug: 'tilc-show',               label: 'Tîlc Show' },
 ];
 
 // Recurring column tags that aren't main sections but whose articles we want
@@ -102,27 +103,42 @@ function sectionOrder(section: string): number {
   return SECTION_ORDER_INDEX[section] ?? 99;
 }
 
-const ARTICLE_RE = /href="(\/(?!autor\/|tag\/|abonament|formular|tilc-show|situatiunea)[a-z][a-z0-9-]*\/[a-z0-9-]{5,})"/g;
+const ARTICLE_RE = /href="(\/(?!autor\/|tag\/|abonament|formular|situatiunea)[a-z][a-z0-9-]*\/[a-z0-9-]{5,})"/g;
 
-async function discoverUrls(): Promise<Set<string>> {
-  const urls = new Set<string>();
-  const addFromHtml = (html: string) => {
-    for (const m of html.matchAll(ARTICLE_RE)) urls.add(BASE + m[1]);
+interface Candidate {
+  isTagFront: boolean;
+}
+
+async function discoverUrls(): Promise<Map<string, Candidate>> {
+  const urls = new Map<string, Candidate>();
+
+  // Add all article URLs from `html` to the candidate map. If `markFirst` is true,
+  // the first matching URL in document order is flagged isTagFront=true (used for
+  // tag-page crawls, which are reverse-chronological — position 1 is always the
+  // most recently published article in that column, even when its .updated date
+  // looks stale due to pre-publication editing).
+  const addFromHtml = (html: string, markFirst = false) => {
+    let first = true;
+    for (const m of html.matchAll(ARTICLE_RE)) {
+      const url = BASE + m[1];
+      const front = markFirst && first;
+      const existing = urls.get(url);
+      urls.set(url, { isTagFront: (existing?.isTagFront ?? false) || front });
+      first = false;
+    }
   };
 
   process.stdout.write('Discovering: homepage');
   addFromHtml(await fetchHtml(BASE));
 
   // SECTIONS: crawl both the section archive (/{slug}) and the tag page
-  // (/tag/{slug}). Section archives show 42 articles alphabetically — recent
-  // articles appear there only if their slugs fall in the shown range. Tag
-  // pages are reverse-chronological, guaranteeing the current week's article
-  // is always the first result.
+  // (/tag/{slug}). Section archives show 42 articles alphabetically. Tag pages
+  // are reverse-chronological — first article is always the most recent.
   for (const s of SECTIONS) {
     process.stdout.write(` ${s.slug}`);
     try {
       addFromHtml(await fetchHtml(`${BASE}/${s.slug}`));
-      addFromHtml(await fetchHtml(`${BASE}/tag/${s.slug}`));
+      addFromHtml(await fetchHtml(`${BASE}/tag/${s.slug}`), true);
     } catch (e) {
       console.warn(`\n  section fetch failed for ${s.slug}: ${e instanceof Error ? e.message : e}`);
     }
@@ -133,7 +149,7 @@ async function discoverUrls(): Promise<Set<string>> {
   for (const tag of EXTRA_TAGS) {
     process.stdout.write(` ${tag}`);
     try {
-      addFromHtml(await fetchHtml(`${BASE}/tag/${tag}`));
+      addFromHtml(await fetchHtml(`${BASE}/tag/${tag}`), true);
     } catch (e) {
       console.warn(`\n  tag fetch failed for ${tag}: ${e instanceof Error ? e.message : e}`);
     }
@@ -160,7 +176,7 @@ type FetchResult =
   | { status: 'old' } // pre-isRecent, expected, silent
   | { status: 'no-title' | 'no-date' | 'no-content' }; // unexpected, surface
 
-async function fetchArticle(url: string): Promise<FetchResult> {
+async function fetchArticle(url: string, isTagFront = false): Promise<FetchResult> {
   const raw = await fetchHtml(url);
   const root = parse(raw);
 
@@ -170,7 +186,15 @@ async function fetchArticle(url: string): Promise<FetchResult> {
   const dateText = root.querySelector('span.post-date')?.text?.replace(/[^\w\s,]/g, '').trim() ?? '';
   const date = parseRomanianDate(dateText);
   if (!date) return { status: 'no-date' };
-  if (!isThisIssue(date)) return { status: 'old' };
+
+  // Tag-front URLs trust positional ordering on reverse-chronological tag pages,
+  // so we accept articles whose .updated reaches up to 13 days back. This catches
+  // pre-prepared articles whose post_modified is stuck in the previous week even
+  // though they were published this Thursday. Non-front URLs use the strict
+  // ISO-week filter against false positives from sidebar/archive listings.
+  const ageDays = (Date.now() - date.getTime()) / 86_400_000;
+  const accept = isTagFront ? ageDays <= 13 : isThisIssue(date);
+  if (!accept) return { status: 'old' };
 
   const subtitle = root.querySelector('p.post_subtitle_text')?.text?.trim() ?? '';
 
@@ -459,10 +483,10 @@ async function main() {
   let oldCount = 0;
   const unexpected: { url: string; reason: string }[] = [];
   let i = 0;
-  for (const url of urls) {
+  for (const [url, meta] of urls) {
     process.stdout.write(`\r[${++i}/${urls.size}] ${url.slice(BASE.length)}${' '.repeat(40)}`);
     try {
-      const r = await fetchArticle(url);
+      const r = await fetchArticle(url, meta.isTagFront);
       if (r.status === 'ok') articles.push(r.article);
       else if (r.status === 'old') oldCount++;
       else unexpected.push({ url, reason: r.status });
