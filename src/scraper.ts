@@ -64,11 +64,20 @@ async function fetchHtml(url: string): Promise<string> {
 }
 
 function parseRomanianDate(text: string): Date | null {
-  const m = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i);
-  if (!m) return null;
-  const month = MONTHS[m[2].toLowerCase()];
-  if (month === undefined) return null;
-  return new Date(Number(m[3]), month, Number(m[1]));
+  // Full date with year
+  const mFull = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+  if (mFull) {
+    const month = MONTHS[mFull[2].toLowerCase()];
+    if (month === undefined) return null;
+    return new Date(Number(mFull[3]), month, Number(mFull[1]));
+  }
+  // Date without year (e.g. "07 Mai") — assume current year
+  const mShort = text.match(/(\d{1,2})\s+(\w+)/i);
+  if (mShort) {
+    const month = MONTHS[mShort[2].toLowerCase()];
+    if (month !== undefined) return new Date(new Date().getFullYear(), month, Number(mShort[1]));
+  }
+  return null;
 }
 
 function formatRomanianDate(date: Date): string {
@@ -167,8 +176,17 @@ async function fetchArticle(url: string): Promise<FetchResult> {
   const title = root.querySelector('h1.single_post_title_main')?.text?.trim();
   if (!title) return { status: 'no-title' };
 
-  const dateText = root.querySelector('span.post-date')?.text?.replace(/[^\w\s,]/g, '').trim() ?? '';
-  const date = parseRomanianDate(dateText);
+  // Take the latest date across all post-date spans. The .updated span holds the
+  // last-modified date (may be from a previous week if the article was prepared
+  // in advance); other spans hold the publication date without year. Using the
+  // maximum ensures we always get the actual publication date.
+  const dateSpans = root.querySelectorAll('span.post-date');
+  let date: Date | null = null;
+  for (const span of dateSpans) {
+    const t = span.text.replace(/[^\w\s,]/g, '').trim();
+    const d = parseRomanianDate(t);
+    if (d && (!date || d > date)) date = d;
+  }
   if (!date) return { status: 'no-date' };
   if (!isThisIssue(date)) return { status: 'old' };
 
