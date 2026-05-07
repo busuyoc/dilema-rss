@@ -63,23 +63,12 @@ async function fetchHtml(url: string): Promise<string> {
   return r.text();
 }
 
-function parseRomanianDate(text: string, fallbackYear?: number): Date | null {
-  // Full date with year
-  const mFull = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i);
-  if (mFull) {
-    const month = MONTHS[mFull[2].toLowerCase()];
-    if (month === undefined) return null;
-    return new Date(Number(mFull[3]), month, Number(mFull[1]));
-  }
-  // Date without year — use caller-supplied fallback only
-  if (fallbackYear !== undefined) {
-    const mShort = text.match(/(\d{1,2})\s+(\w+)/i);
-    if (mShort) {
-      const month = MONTHS[mShort[2].toLowerCase()];
-      if (month !== undefined) return new Date(fallbackYear, month, Number(mShort[1]));
-    }
-  }
-  return null;
+function parseRomanianDate(text: string): Date | null {
+  const m = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+  if (!m) return null;
+  const month = MONTHS[m[2].toLowerCase()];
+  if (month === undefined) return null;
+  return new Date(Number(m[3]), month, Number(m[1]));
 }
 
 function formatRomanianDate(date: Date): string {
@@ -178,23 +167,8 @@ async function fetchArticle(url: string): Promise<FetchResult> {
   const title = root.querySelector('h1.single_post_title_main')?.text?.trim();
   if (!title) return { status: 'no-title' };
 
-  // The .updated span has the last-modified date WITH year (may be from a
-  // previous week for pre-prepared articles). Other spans have the publication
-  // date WITHOUT year. Strategy: infer the year from .updated, then take the
-  // maximum date across all spans using that year for year-less ones. This
-  // correctly resolves "updated Apr 30 / published May 7" to May 7.
-  const dateSpans = root.querySelectorAll('span.post-date');
-  const updatedText = dateSpans.find(s => s.classList.contains('updated'))
-    ?.text?.replace(/[^\w\s,]/g, '').trim() ?? '';
-  const yearFromUpdated = updatedText.match(/(\d{4})/)?.[1];
-  const fallbackYear = yearFromUpdated ? Number(yearFromUpdated) : undefined;
-
-  let date: Date | null = null;
-  for (const span of dateSpans) {
-    const t = span.text.replace(/[^\w\s,]/g, '').trim();
-    const d = parseRomanianDate(t, fallbackYear);
-    if (d && (!date || d > date)) date = d;
-  }
+  const dateText = root.querySelector('span.post-date')?.text?.replace(/[^\w\s,]/g, '').trim() ?? '';
+  const date = parseRomanianDate(dateText);
   if (!date) return { status: 'no-date' };
   if (!isThisIssue(date)) return { status: 'old' };
 
