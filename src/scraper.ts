@@ -84,21 +84,14 @@ function getISOWeek(date: Date): number {
   return 1 + Math.round(((d.getTime() - week1.getTime()) / 86_400_000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
 }
 
-// Dilema publishes on Thursdays. "This issue" = articles published since
-// the most recent Thursday 00:00 local time. Isolates exactly one issue
-// regardless of how many days have elapsed, avoiding the dual-issue bleed
-// that an N-day rolling window causes when the cron fires close to the boundary.
-function getMostRecentThursday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  // 0=Sun,1=Mon,...,4=Thu,5=Fri,6=Sat → days since last Thursday
-  const daysBack = (d.getDay() + 3) % 7;
-  d.setDate(d.getDate() - daysBack);
-  return d;
-}
-
+// "This issue" = same ISO week as today. ISO week boundaries (Mon-Sun) cleanly
+// separate Dilema issues: last week's Thursday (W18) vs this week's articles
+// (Wed+Thu, W19) are in different weeks. Avoids the dual-issue bleed of an
+// N-day rolling window, and avoids cutting Wednesday-dated articles like a
+// Thursday-anchor would.
 function isThisIssue(date: Date): boolean {
-  return date >= getMostRecentThursday();
+  const now = new Date();
+  return getISOWeek(date) === getISOWeek(now) && date.getFullYear() === now.getFullYear();
 }
 
 function escapeXml(s: string): string {
