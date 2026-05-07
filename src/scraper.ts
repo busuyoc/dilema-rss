@@ -24,6 +24,7 @@ const SECTIONS: Section[] = [
   { slug: 'muzica',                  label: 'Muzică' },
   { slug: 'arte-vizuale',            label: 'Arte vizuale' },
   { slug: 'arte-performative',       label: 'Arte performative' },
+  { slug: 'la-zi-in-cultura',        label: 'La zi în cultură' },
   { slug: 'tilc-show',               label: 'Tîlc Show' },
 ];
 
@@ -64,12 +65,23 @@ async function fetchHtml(url: string): Promise<string> {
   return r.text();
 }
 
-function parseRomanianDate(text: string): Date | null {
-  const m = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i);
-  if (!m) return null;
-  const month = MONTHS[m[2].toLowerCase()];
-  if (month === undefined) return null;
-  return new Date(Number(m[3]), month, Number(m[1]));
+function parseRomanianDate(text: string, fallbackYear?: number): Date | null {
+  // Full date: "07 Mai 2026"
+  const mFull = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i);
+  if (mFull) {
+    const month = MONTHS[mFull[2].toLowerCase()];
+    if (month === undefined) return null;
+    return new Date(Number(mFull[3]), month, Number(mFull[1]));
+  }
+  // Year-less: "07 Mai" — only when caller provides a fallback (tag-page entries).
+  if (fallbackYear !== undefined) {
+    const mShort = text.match(/(\d{1,2})\s+(\w+)/i);
+    if (mShort) {
+      const month = MONTHS[mShort[2].toLowerCase()];
+      if (month !== undefined) return new Date(fallbackYear, month, Number(mShort[1]));
+    }
+  }
+  return null;
 }
 
 function formatRomanianDate(date: Date): string {
@@ -84,14 +96,23 @@ function getISOWeek(date: Date): number {
   return 1 + Math.round(((d.getTime() - week1.getTime()) / 86_400_000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
 }
 
-// "This issue" = same ISO week as today. ISO week boundaries (Mon-Sun) cleanly
-// separate Dilema issues: last week's Thursday (W18) vs this week's articles
-// (Wed+Thu, W19) are in different weeks. Avoids the dual-issue bleed of an
-// N-day rolling window, and avoids cutting Wednesday-dated articles like a
-// Thursday-anchor would.
-function isThisIssue(date: Date): boolean {
-  const now = new Date();
-  return getISOWeek(date) === getISOWeek(now) && date.getFullYear() === now.getFullYear();
+// Most recent Thursday at 00:00 local — fallback for issue_date when no
+// /tema-saptaminii/ articles have tag-page dates yet (e.g. scraping before the
+// dossier publishes).
+function getMostRecentThursday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  // 0=Sun,1=Mon,...,4=Thu,5=Fri,6=Sat → days since last Thursday
+  const daysBack = (d.getDay() + 3) % 7;
+  d.setDate(d.getDate() - daysBack);
+  return d;
+}
+
+function isoDate(d: Date): string {
+  // Local-time YYYY-MM-DD. Avoids the toISOString shift (e.g. EEST midnight
+  // displays as previous day's 21:00 UTC) which made issue_date logs read
+  // a day earlier than reality.
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function escapeXml(s: string): string {
@@ -103,53 +124,87 @@ function sectionOrder(section: string): number {
   return SECTION_ORDER_INDEX[section] ?? 99;
 }
 
-const ARTICLE_RE = /href="(\/(?!autor\/|tag\/|abonament|formular|situatiunea)[a-z][a-z0-9-]*\/[a-z0-9-]{5,})"/g;
+const ARTICLE_RE = /href="(\/(?!autor\/|tag\/|abonament|formular|situatiunea)[a-z][a-z0-9_-]*\/[a-z0-9_-]{5,})"/g;
 
-interface Candidate {
-  isTagFront: boolean;
+// Pair an article URL with its publication date as displayed inline on listing
+// pages (homepage, section archives, tag pages). The `<span class="post-date">`
+// (without the `.updated` modifier class) carries `post_date` — reliable for
+// filtering, unlike the `.updated` post_modified date that's stuck in W18 for
+// pre-prepared articles. The HTML format is:
+//   `<span class="post-date"><i class="fa fa-clock-o"></i>Joi, 07 Mai</span>`
+// The 5000-char cap between href and post-date protects against pairing across
+// cards. The 200-char cap between span-open and date text allows the inline
+// `<i>` icon while still scoping to the same span.
+const TAG_ENTRY_RE = /href="(\/(?!autor\/|tag\/|abonament|formular|situatiunea)[a-z][a-z0-9_-]*\/[a-z0-9_-]{5,})"[\s\S]{0,5000}?<span\s+class="post-date"\s*>[\s\S]{0,200}?(\d{1,2}\s+\w+(?:\s+\d{4})?)/g;
+
+function extractTagEntries(html: string): Map<string, Date> {
+  const entries = new Map<string, Date>();
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+
+  for (const m of html.matchAll(TAG_ENTRY_RE)) {
+    const path = m[1];
+    if (entries.has(path)) continue; // first match per URL wins (top of card)
+
+    const date = parseRomanianDate(m[2], today.getFullYear());
+    if (!date) continue;
+    // Year correction: tentative date in the future means the article is from last year.
+    if (date > today) date.setFullYear(date.getFullYear() - 1);
+
+    entries.set(path, date);
+  }
+
+  return entries;
 }
 
-async function discoverUrls(): Promise<Map<string, Candidate>> {
-  const urls = new Map<string, Candidate>();
+interface DiscoveryMeta {
+  date: Date | null;
+}
 
-  // Add all article URLs from `html` to the candidate map. If `markFirst` is true,
-  // the first matching URL in document order is flagged isTagFront=true (used for
-  // tag-page crawls, which are reverse-chronological — position 1 is always the
-  // most recently published article in that column, even when its .updated date
-  // looks stale due to pre-publication editing).
-  const addFromHtml = (html: string, markFirst = false) => {
-    let first = true;
-    for (const m of html.matchAll(ARTICLE_RE)) {
-      const url = BASE + m[1];
-      const front = markFirst && first;
-      const existing = urls.get(url);
-      urls.set(url, { isTagFront: (existing?.isTagFront ?? false) || front });
-      first = false;
+async function discoverUrls(): Promise<Map<string, DiscoveryMeta>> {
+  const urls = new Map<string, DiscoveryMeta>();
+
+  const addUrl = (path: string, date: Date | null) => {
+    const url = BASE + path;
+    const existing = urls.get(url);
+    if (!existing) {
+      urls.set(url, { date });
+    } else if (!existing.date && date) {
+      existing.date = date; // upgrade null → date when a listing provides it
     }
   };
 
-  process.stdout.write('Discovering: homepage');
-  addFromHtml(await fetchHtml(BASE));
+  // Two-pronged extraction per page:
+  //  - ARTICLE_RE catches every article URL (including ones the listing parses
+  //    with structures the date-pair regex can't reach)
+  //  - extractTagEntries pairs URL with its inline publication date when present
+  // Same URL discovered both ways → URL kept once, date populated from the second.
+  const addAll = (html: string) => {
+    for (const m of html.matchAll(ARTICLE_RE)) addUrl(m[1], null);
+    for (const [path, date] of extractTagEntries(html)) addUrl(path, date);
+  };
 
-  // SECTIONS: crawl both the section archive (/{slug}) and the tag page
-  // (/tag/{slug}). Section archives show 42 articles alphabetically. Tag pages
-  // are reverse-chronological — first article is always the most recent.
+  process.stdout.write('Discovering: homepage');
+  addAll(await fetchHtml(BASE));
+
+  // SECTIONS: section archive (alphabetical, has dates) AND tag page (some are
+  // empty for section-named tags but harmless — addAll deduplicates).
   for (const s of SECTIONS) {
     process.stdout.write(` ${s.slug}`);
     try {
-      addFromHtml(await fetchHtml(`${BASE}/${s.slug}`));
-      addFromHtml(await fetchHtml(`${BASE}/tag/${s.slug}`), true);
+      addAll(await fetchHtml(`${BASE}/${s.slug}`));
+      addAll(await fetchHtml(`${BASE}/tag/${s.slug}`));
     } catch (e) {
       console.warn(`\n  section fetch failed for ${s.slug}: ${e instanceof Error ? e.message : e}`);
     }
     await Bun.sleep(150);
   }
 
-  // EXTRA_TAGS: recurring columns with no section archive; /tag/{slug} only.
+  // EXTRA_TAGS: column tag pages (reverse-chronological, dates inline)
   for (const tag of EXTRA_TAGS) {
     process.stdout.write(` ${tag}`);
     try {
-      addFromHtml(await fetchHtml(`${BASE}/tag/${tag}`), true);
+      addAll(await fetchHtml(`${BASE}/tag/${tag}`));
     } catch (e) {
       console.warn(`\n  tag fetch failed for ${tag}: ${e instanceof Error ? e.message : e}`);
     }
@@ -173,28 +228,20 @@ interface Article {
 
 type FetchResult =
   | { status: 'ok'; article: Article }
-  | { status: 'old' } // pre-isRecent, expected, silent
-  | { status: 'no-title' | 'no-date' | 'no-content' }; // unexpected, surface
+  | { status: 'no-title' | 'no-date' | 'no-content' }; // window filter applied in main()
 
-async function fetchArticle(url: string, isTagFront = false): Promise<FetchResult> {
+async function fetchArticle(url: string): Promise<FetchResult> {
   const raw = await fetchHtml(url);
   const root = parse(raw);
 
   const title = root.querySelector('h1.single_post_title_main')?.text?.trim();
   if (!title) return { status: 'no-title' };
 
+  // span.post-date.updated holds the article's last-modified date with year.
+  // Used only when no tag-page publication date is available for this URL.
   const dateText = root.querySelector('span.post-date')?.text?.replace(/[^\w\s,]/g, '').trim() ?? '';
   const date = parseRomanianDate(dateText);
   if (!date) return { status: 'no-date' };
-
-  // Tag-front URLs trust positional ordering on reverse-chronological tag pages,
-  // so we accept articles whose .updated reaches up to 13 days back. This catches
-  // pre-prepared articles whose post_modified is stuck in the previous week even
-  // though they were published this Thursday. Non-front URLs use the strict
-  // ISO-week filter against false positives from sidebar/archive listings.
-  const ageDays = (Date.now() - date.getTime()) / 86_400_000;
-  const accept = isTagFront ? ageDays <= 13 : isThisIssue(date);
-  if (!accept) return { status: 'old' };
 
   const subtitle = root.querySelector('p.post_subtitle_text')?.text?.trim() ?? '';
 
@@ -327,6 +374,48 @@ async function fetchCoverImage(): Promise<CoverImage | null> {
   return { data, ext, mime };
 }
 
+// Same shape as CoverImage. Barburisme = weekly political caricature gallery; the
+// image filename embeds the ISO week, e.g. /images/barburisme/19-2026.webp.
+async function fetchBarburismeImage(): Promise<CoverImage | null> {
+  let html: string;
+  try {
+    html = await fetchHtml(BASE);
+  } catch (e) {
+    console.warn(`barburisme: homepage fetch failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+
+  // Homepage uses relative URLs like `images/barburisme/19-2026.webp` (no leading
+  // slash). `[^"]*?` is lazy and may be empty to accept that form too.
+  const m = html.match(/(?:src|data-src)="([^"]*?images\/barburisme\/[^"]+\.(?:jpg|jpeg|png|webp))"/i);
+  if (!m) {
+    console.warn('barburisme: no images/barburisme/ image URL on homepage');
+    return null;
+  }
+
+  let url = m[1];
+  if (url.startsWith('/')) url = BASE + url;
+  else if (!url.startsWith('http')) url = BASE + '/' + url;
+
+  let r: Response;
+  try {
+    r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  } catch (e) {
+    console.warn(`barburisme: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+  if (!r.ok) {
+    console.warn(`barburisme: ${r.status} for ${url}`);
+    return null;
+  }
+
+  const data = new Uint8Array(await r.arrayBuffer());
+  const rawExt = (url.match(/\.(jpg|jpeg|png|webp)$/i)?.[1] ?? 'jpg').toLowerCase();
+  const ext = (rawExt === 'jpeg' ? 'jpg' : rawExt) as 'jpg' | 'png' | 'webp';
+  const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'image/webp';
+  return { data, ext, mime };
+}
+
 function xhtmlPage(title: string, body: string): Uint8Array {
   return strToU8(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
@@ -342,14 +431,14 @@ ${body}
 </html>`);
 }
 
-function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | null): Uint8Array {
+function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | null, barburisme: CoverImage | null): Uint8Array {
   const week = getISOWeek(buildDate).toString().padStart(2, '0');
   // UID is week-stable so re-runs in the same week update the same book
   // (Calibre / Apple Books dedup by uid). Title carries the full build date
   // so users can still tell two builds apart visually.
   const uid = `dilema-${buildDate.getFullYear()}-W${week}`;
   const dateLabel = formatRomanianDate(buildDate);
-  const isoDate = buildDate.toISOString().slice(0, 10);
+  const dcDate = buildDate.toISOString().slice(0, 10);
 
   // Sort: section order first, then title within section
   const sorted = [...articles].sort((a, b) => {
@@ -395,6 +484,22 @@ function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | 
 </div>`;
   files['OEBPS/cover.xhtml'] = [xhtmlPage('Dilema Veche', coverBody), { level: 6 }];
 
+  // Barburisme caricature: same image-as-page treatment as cover. Inserted into
+  // spine right after the navigation TOC, so it shows up early in the reading order.
+  // TOC entry is prepended to the section list below.
+  let hasBarburisme = false;
+  if (barburisme) {
+    const file = `barburisme.${barburisme.ext}`;
+    files[`OEBPS/${file}`] = [barburisme.data, { level: 0 }];
+    files['OEBPS/barburisme.xhtml'] = [xhtmlPage('Barburisme',
+      `<div class="cover-image"><img src="${file}" alt="Barburisme — caricatura săptămânii"/></div>`
+    ), { level: 6 }];
+    manifest.push(`<item id="barburisme-img" href="${file}" media-type="${barburisme.mime}"/>`);
+    manifest.push('<item id="barburisme" href="barburisme.xhtml" media-type="application/xhtml+xml"/>');
+    spine.push('<itemref idref="barburisme"/>');
+    hasBarburisme = true;
+  }
+
   // One XHTML per article
   sorted.forEach((a, idx) => {
     const id = `a${idx}`;
@@ -420,14 +525,19 @@ ${a.xhtml}
     spine.push(`<itemref idref="${id}"/>`);
   });
 
-  // Nested TOC: sections → articles
-  const navItems = Array.from(sectionGroups.entries()).map(([section, indices]) => {
+  // Nested TOC: sections → articles. If Barburisme is present, prepend it as a
+  // top-level leaf entry so it gets its own line in the reader's TOC view.
+  const sectionNavItems = Array.from(sectionGroups.entries()).map(([section, indices]) => {
     const label = SECTION_LABELS[section] ?? section;
     const subItems = indices.map(idx =>
       `        <li><a href="a${idx}.xhtml">${escapeXml(sorted[idx].title)}</a></li>`
     ).join('\n');
     return `    <li>\n      <span>${escapeXml(label)}</span>\n      <ol>\n${subItems}\n      </ol>\n    </li>`;
-  }).join('\n');
+  });
+  if (hasBarburisme) {
+    sectionNavItems.unshift('    <li><a href="barburisme.xhtml">Barburisme</a></li>');
+  }
+  const navItems = sectionNavItems.join('\n');
 
   files['OEBPS/toc.xhtml'] = [xhtmlPage('Cuprins', `
 <nav xmlns:epub="http://www.idpf.org/2007/ops" epub:type="toc">
@@ -447,7 +557,7 @@ ${navItems}
     <dc:identifier id="uid">${uid}</dc:identifier>
     <dc:title>Dilema Veche – ${escapeXml(dateLabel)}</dc:title>
     <dc:language>ro</dc:language>
-    <dc:date>${isoDate}</dc:date>
+    <dc:date>${dcDate}</dc:date>
     <dc:creator>dilema.ro</dc:creator>
     <meta property="dcterms:modified">${buildDate.toISOString().replace(/\.\d+Z$/, 'Z')}</meta>${coverMetaCompat ? '\n    ' + coverMetaCompat : ''}
   </metadata>
@@ -479,17 +589,49 @@ async function main() {
   const urls = await discoverUrls();
   console.log(`Discovered ${urls.size} candidate URLs`);
 
+  // Compute issue_date: max publication date among /tema-saptaminii/* URLs that have
+  // tag-page-derived dates. This anchors "this issue" to the dossier's release date.
+  // Fallback to most-recent-Thursday if no dossier dates yet (e.g. scraping before the
+  // Thursday morning publication).
+  const dossierDates = [...urls.entries()]
+    .filter(([u, m]) => u.includes('/tema-saptaminii/') && m.date)
+    .map(([_, m]) => m.date!);
+  const issueDate = dossierDates.length
+    ? new Date(Math.max(...dossierDates.map(d => d.getTime())))
+    : getMostRecentThursday();
+  const windowStart = new Date(issueDate); windowStart.setDate(windowStart.getDate() - 6);
+  const windowEnd   = new Date(issueDate); windowEnd.setDate(windowEnd.getDate() + 1);
+  console.log(`Issue date: ${isoDate(issueDate)}, window ${isoDate(windowStart)} → ${isoDate(windowEnd)}`);
+
+  const inWindow = (d: Date) => d >= windowStart && d <= windowEnd;
+
+  // Phase A: cheap pre-filter on tag-page dates. URLs whose tag-page date is outside
+  // the window are dropped without fetching the article body. Saves ~1000 fetches.
+  const toFetch: string[] = [];
+  let preFiltered = 0;
+  for (const [url, meta] of urls) {
+    if (meta.date && !inWindow(meta.date)) {
+      preFiltered++;
+      continue;
+    }
+    toFetch.push(url);
+  }
+
+  // Phase B: fetch surviving URLs, parse article date, apply window filter.
   const articles: Article[] = [];
   let oldCount = 0;
   const unexpected: { url: string; reason: string }[] = [];
   let i = 0;
-  for (const [url, meta] of urls) {
-    process.stdout.write(`\r[${++i}/${urls.size}] ${url.slice(BASE.length)}${' '.repeat(40)}`);
+  for (const url of toFetch) {
+    process.stdout.write(`\r[${++i}/${toFetch.length}] ${url.slice(BASE.length)}${' '.repeat(40)}`);
     try {
-      const r = await fetchArticle(url, meta.isTagFront);
-      if (r.status === 'ok') articles.push(r.article);
-      else if (r.status === 'old') oldCount++;
-      else unexpected.push({ url, reason: r.status });
+      const r = await fetchArticle(url);
+      if (r.status === 'ok') {
+        if (inWindow(r.article.date)) articles.push(r.article);
+        else oldCount++;
+      } else {
+        unexpected.push({ url, reason: r.status });
+      }
     } catch (e) {
       unexpected.push({ url, reason: e instanceof Error ? e.message : String(e) });
     }
@@ -497,7 +639,7 @@ async function main() {
   }
   process.stdout.write('\n');
 
-  console.log(`Filtered: ${articles.length} recent, ${oldCount} older (skipped silently)`);
+  console.log(`Filtered: ${articles.length} in window, ${preFiltered + oldCount} outside (${preFiltered} via tag-page date, ${oldCount} via article body)`);
   if (unexpected.length > 0) {
     console.warn(`Unexpected skips (${unexpected.length}):`);
     unexpected.forEach(s => console.warn(`  ${s.url.slice(BASE.length)} — ${s.reason}`));
@@ -519,7 +661,11 @@ async function main() {
   const cover = await fetchCoverImage();
   console.log(cover ? `${cover.ext} ${(cover.data.length / 1024).toFixed(0)} KB` : 'not available (using text fallback)');
 
-  const epub = generateEPUB(articles, now, cover);
+  process.stdout.write('Fetching Barburisme caricature... ');
+  const barburisme = await fetchBarburismeImage();
+  console.log(barburisme ? `${barburisme.ext} ${(barburisme.data.length / 1024).toFixed(0)} KB` : 'not available');
+
+  const epub = generateEPUB(articles, now, cover, barburisme);
   await Bun.write(epubName, epub);
   await Bun.write('dilema-latest.epub', epub);
   console.log(`Written ${epubName} + dilema-latest.epub (${(epub.length / 1024).toFixed(0)} KB)`);
