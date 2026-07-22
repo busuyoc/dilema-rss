@@ -2,10 +2,13 @@
   "name": "dilema-rss",
   "version": "1.0.0",
   "scripts": {
-    "scrape": "bun run src/scraper.ts"
+    "scrape": "bun run src/scraper.ts",
+    "build:search": "bun build src/search/main.ts --outfile search/app.js --minify --target browser && cp node_modules/sql.js-httpvfs/dist/sqlite.worker.js node_modules/sql.js-httpvfs/dist/sql-wasm.wasm search/",
+    "dev": "bun run scripts/dev-server.ts"
   },
   "dependencies": {
     "fflate": "^0.8.2",
-    "node-html-parser": "^6.1.13"
+    "node-html-parser": "^6.1.13",
+    "sql.js-httpvfs": "^0.8.12"
   }
 }
