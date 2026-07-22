@@ -729,10 +729,15 @@ async function main() {
   console.log(`Written articles.jsonl (${articles.length} articles, issue ${issueLabel})`);
 
   // The homepage only carries the *current* issue's cover and caricature —
-  // wrong for an ISSUE_DATE backfill, which falls back to the text cover.
+  // and it rotates to the next issue's art up to a day before Thursday
+  // publication (observed 2026-07-22: W30's cover on W29's homepage). Only
+  // trust it when building on the issue's own day; backfills and late
+  // rebuilds get the text cover instead of the wrong week's artwork.
+  const coverTrusted = !process.env.ISSUE_DATE
+    && (now.getTime() - issueDate.getTime()) / 86_400_000 <= 1;
   let cover: CoverImage | null = null;
   let barburisme: CoverImage | null = null;
-  if (!process.env.ISSUE_DATE) {
+  if (coverTrusted) {
     process.stdout.write('Fetching magazine cover... ');
     cover = await fetchCoverImage();
     console.log(cover ? `${cover.ext} ${(cover.data.length / 1024).toFixed(0)} KB` : 'not available (using text fallback)');
