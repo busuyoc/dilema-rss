@@ -224,6 +224,7 @@ interface Article {
   section: string;
   imageUrl: string | null;
   xhtml: string; // clean XHTML for EPUB — plain text paragraphs, guaranteed valid
+  text: string;  // same blocks as plain text — consumed by tools/archive via articles.jsonl
 }
 
 type FetchResult =
@@ -259,21 +260,21 @@ async function fetchArticle(url: string): Promise<FetchResult> {
     imageUrl = src.startsWith('/') ? BASE + src : src.startsWith('http') ? src : null;
   }
 
-  // Build clean XHTML: plain text per block, no raw HTML from the site.
+  // Build clean content blocks: plain text per block, no raw HTML from the site.
   // This avoids HTML entities, unclosed void elements, and other XHTML issues.
-  const xhtml = contentDiv.querySelectorAll('p, h2, h3, blockquote')
-    .map(el => {
-      const text = el.text.trim();
-      if (!text) return '';
-      const tag = el.tagName.toLowerCase() === 'blockquote' ? 'blockquote' :
-                  el.tagName.toLowerCase().startsWith('h') ? el.tagName.toLowerCase() : 'p';
-      return `<${tag}>${escapeXml(text)}</${tag}>`;
-    })
-    .filter(s => s.length > 0)
-    .join('\n');
+  const blocks: { tag: string; text: string }[] = [];
+  for (const el of contentDiv.querySelectorAll('p, h2, h3, blockquote')) {
+    const t = el.text.trim();
+    if (!t) continue;
+    const lower = el.tagName.toLowerCase();
+    const tag = lower === 'blockquote' ? 'blockquote' : lower.startsWith('h') ? lower : 'p';
+    blocks.push({ tag, text: t });
+  }
+  const xhtml = blocks.map(b => `<${b.tag}>${escapeXml(b.text)}</${b.tag}>`).join('\n');
+  const text = blocks.map(b => b.text).join('\n\n');
 
   const section = new URL(url).pathname.split('/')[1] ?? '';
-  return { status: 'ok', article: { url, title, subtitle, author, date, section, imageUrl, xhtml } };
+  return { status: 'ok', article: { url, title, subtitle, author, date, section, imageUrl, xhtml, text } };
 }
 
 // ── RSS ──────────────────────────────────────────────────────────────────────
@@ -656,6 +657,23 @@ async function main() {
 
   await Bun.write('feed.xml', generateRSS(articles, now));
   console.log('Written feed.xml');
+
+  // articles.jsonl: the data contract with tools/archive (Go). One JSON object
+  // per article, keyed by the *issue* week (dossier-anchored, not build-date
+  // week — off-Thursday runs still label content with the issue it belongs to).
+  const issueLabel = `${issueDate.getFullYear()}-W${getISOWeek(issueDate).toString().padStart(2, '0')}`;
+  const jsonl = articles.map(a => JSON.stringify({
+    url: a.url,
+    title: a.title,
+    subtitle: a.subtitle,
+    author: a.author,
+    section: a.section,
+    date: isoDate(a.date),
+    issue: issueLabel,
+    body: a.text,
+  })).join('\n');
+  await Bun.write('articles.jsonl', jsonl + (jsonl ? '\n' : ''));
+  console.log(`Written articles.jsonl (${articles.length} articles, issue ${issueLabel})`);
 
   process.stdout.write('Fetching magazine cover... ');
   const cover = await fetchCoverImage();
