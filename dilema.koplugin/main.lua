@@ -2,21 +2,20 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local UIManager       = require("ui/uimanager")
 local logger          = require("logger")
 
-local EPUB_URL   = "https://busuyoc.github.io/dilema-rss/dilema-latest.epub"
-local DEST_FILE  = "/mnt/ext1/books/dilema-latest.epub"
-local STATE_FILE = "/mnt/ext1/applications/koreader/plugins/dilema.koplugin/.lastmod"
+local BASE_URL    = "https://busuyoc.github.io/dilema-rss/"
+local CATALOG_URL = BASE_URL .. "catalog.xml"
+local BOOKS_DIR   = "/mnt/ext1/books/"
+
+-- Each issue is saved under its dated filename (dilema-2026-W29.epub), never
+-- overwriting a fixed path. KOReader keys cover thumbnails (bookinfo cache)
+-- and reading progress (the .sdr sidecar) on the file path, so re-using one
+-- path made every new issue inherit the previous issue's cover, title and
+-- reading position. A dated file is a genuinely new book; "already have this
+-- week" becomes a simple file-exists check and no .lastmod state is needed.
 
 local Dilema = WidgetContainer:extend{
     name = "dilema",
 }
-
-local function readFile(path)
-    local f = io.open(path, "r")
-    if not f then return nil end
-    local s = f:read("*a")
-    f:close()
-    return s
-end
 
 local function writeFile(path, content)
     local f = io.open(path, "wb")
@@ -25,6 +24,12 @@ local function writeFile(path, content)
     f:flush()
     f:close()
     return true
+end
+
+local function fileExists(path)
+    local f = io.open(path, "r")
+    if f then f:close() return true end
+    return false
 end
 
 local function sync()
@@ -38,41 +43,40 @@ local function sync()
         return
     end
 
+    -- The OPDS catalog lists issues newest-first; the first href is the
+    -- current issue's real filename.
+    local catalog_body = {}
     socketutil:set_timeout(8, 15)
-    local _, code, resp_headers = https.request{
-        url     = EPUB_URL,
-        method  = "HEAD",
-        sink    = ltn12.sink.null(),
+    local _, cat_code = https.request{
+        url     = CATALOG_URL,
+        method  = "GET",
+        sink    = ltn12.sink.table(catalog_body),
         headers = { ["User-Agent"] = "KOReader/dilema-sync" },
     }
     socketutil:reset_timeout()
 
-    logger.info("Dilema: HEAD " .. tostring(code))
-    if code ~= 200 or not resp_headers then return end
+    logger.info("Dilema: catalog GET " .. tostring(cat_code))
+    if cat_code ~= 200 then return end
 
-    local lastmod = resp_headers["last-modified"] or ""
-    if lastmod == "" then
-        logger.warn("Dilema: no Last-Modified header")
+    local filename = table.concat(catalog_body)
+        :match('href="(dilema%-%d%d%d%d%-W%d%d%.epub)"')
+    if not filename then
+        logger.warn("Dilema: no issue href found in catalog")
         return
     end
 
-    local stored = readFile(STATE_FILE) or ""
-    local dest_f = io.open(DEST_FILE, "r")
-    local dest_exists = dest_f ~= nil
-    if dest_f then dest_f:close() end
-    if stored == lastmod and dest_exists then
-        logger.info("Dilema: already up to date")
+    local dest = BOOKS_DIR .. filename
+    if fileExists(dest) then
+        logger.info("Dilema: already have " .. filename)
         return
     end
-    if not dest_exists then
-        logger.info("Dilema: dest file missing, forcing download")
-    end
 
-    logger.info("Dilema: downloading " .. EPUB_URL)
+    local url = BASE_URL .. filename
+    logger.info("Dilema: downloading " .. url)
     local body = {}
     socketutil:set_timeout(15, 60)
     local _, dl_code = https.request{
-        url     = EPUB_URL,
+        url     = url,
         method  = "GET",
         sink    = ltn12.sink.table(body),
         headers = { ["User-Agent"] = "KOReader/dilema-sync" },
@@ -88,18 +92,17 @@ local function sync()
         return
     end
 
-    local tmp = DEST_FILE .. ".tmp"
+    local tmp = dest .. ".tmp"
     if not writeFile(tmp, data) then
         logger.warn("Dilema: write failed to " .. tmp)
         return
     end
-    local renamed, rerr = os.rename(tmp, DEST_FILE)
+    local renamed, rerr = os.rename(tmp, dest)
     if not renamed then
         logger.warn("Dilema: rename failed: " .. tostring(rerr))
         return
     end
-    writeFile(STATE_FILE, lastmod)
-    logger.info("Dilema: saved " .. #data .. " bytes -> " .. DEST_FILE)
+    logger.info("Dilema: saved " .. #data .. " bytes -> " .. dest)
 end
 
 function Dilema:init()
