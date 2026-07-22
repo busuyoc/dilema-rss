@@ -59,8 +59,13 @@ const MONTH_NAMES = [
   'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie',
 ];
 
+const FETCH_TIMEOUT_MS = 30_000;
+
 async function fetchHtml(url: string): Promise<string> {
-  const r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  const r = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
   if (!r.ok) throw new Error(`${r.status} ${url}`);
   return r.text();
 }
@@ -357,7 +362,10 @@ async function fetchCoverImage(): Promise<CoverImage | null> {
 
   let r: Response;
   try {
-    r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+    r = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
   } catch (e) {
     console.warn(`cover: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
     return null;
@@ -399,7 +407,10 @@ async function fetchBarburismeImage(): Promise<CoverImage | null> {
 
   let r: Response;
   try {
-    r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+    r = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
   } catch (e) {
     console.warn(`barburisme: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
     return null;

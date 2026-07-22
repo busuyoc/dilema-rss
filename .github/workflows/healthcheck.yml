@@ -1,0 +1,37 @@
+name: Feed health check
+
+# Runs the day after the Thursday scrape and verifies the feed as readers see
+# it: the live GitHub Pages URLs. A green scrape run only proves the commit
+# landed — this proves the site is actually serving fresh content.
+
+on:
+  schedule:
+    - cron: '0 10 * * 5'  # vineri 10:00 UTC, la o zi după scrape
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check published feed
+        run: bash scripts/healthcheck.sh
+
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "Feed health check failed in:title" --json number --jq length)
+          if [ "$open" = "0" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Feed health check failed" \
+              --body "The published feed at https://busuyoc.github.io/dilema-rss/feed.xml is unreachable or stale. See the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          Likely causes: GitHub Pages unpublished/disabled, scrape workflow failing, or dilema.ro changed markup."
+          fi
