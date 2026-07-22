@@ -59,8 +59,13 @@ const MONTH_NAMES = [
   'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie',
 ];
 
+const FETCH_TIMEOUT_MS = 30_000;
+
 async function fetchHtml(url: string): Promise<string> {
-  const r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  const r = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
   if (!r.ok) throw new Error(`${r.status} ${url}`);
   return r.text();
 }
@@ -358,7 +363,10 @@ async function fetchCoverImage(): Promise<CoverImage | null> {
 
   let r: Response;
   try {
-    r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+    r = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
   } catch (e) {
     console.warn(`cover: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
     return null;
@@ -400,7 +408,10 @@ async function fetchBarburismeImage(): Promise<CoverImage | null> {
 
   let r: Response;
   try {
-    r = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+    r = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
   } catch (e) {
     console.warn(`barburisme: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
     return null;
@@ -594,12 +605,31 @@ async function main() {
   // tag-page-derived dates. This anchors "this issue" to the dossier's release date.
   // Fallback to most-recent-Thursday if no dossier dates yet (e.g. scraping before the
   // Thursday morning publication).
+  // ISSUE_DATE=YYYY-MM-DD scrapes a past issue instead (e.g. re-fetching a week
+  // lost to a CI failure). Only works while that week's articles are still
+  // reachable from the first page of the section/tag listings.
   const dossierDates = [...urls.entries()]
     .filter(([u, m]) => u.includes('/tema-saptaminii/') && m.date)
     .map(([_, m]) => m.date!);
-  const issueDate = dossierDates.length
-    ? new Date(Math.max(...dossierDates.map(d => d.getTime())))
-    : getMostRecentThursday();
+  const issueDate = process.env.ISSUE_DATE
+    ? new Date(`${process.env.ISSUE_DATE}T00:00:00`)
+    : dossierDates.length
+      ? new Date(Math.max(...dossierDates.map(d => d.getTime())))
+      : getMostRecentThursday();
+  // Refuse to build from a stale anchor. When the site's listing dates froze
+  // in June–July 2026, this silently re-published the W22 issue as W23–W27
+  // five weeks running. A red CI run beats a wrong issue.
+  if (!process.env.ISSUE_DATE) {
+    const ageDays = (Date.now() - issueDate.getTime()) / 86_400_000;
+    if (ageDays > 6.5) {
+      throw new Error(
+        `issue date ${isoDate(issueDate)} is ${ageDays.toFixed(1)} days old — ` +
+        `discovery pages look stale, refusing to build. ` +
+        `(Override by backfilling explicitly with ISSUE_DATE=YYYY-MM-DD.)`,
+      );
+    }
+  }
+
   const windowStart = new Date(issueDate); windowStart.setDate(windowStart.getDate() - 6);
   const windowEnd   = new Date(issueDate); windowEnd.setDate(windowEnd.getDate() + 1);
   console.log(`Issue date: ${isoDate(issueDate)}, window ${isoDate(windowStart)} → ${isoDate(windowEnd)}`);
@@ -651,9 +681,11 @@ async function main() {
     .sort((a, b) => sectionOrder(a.section) - sectionOrder(b.section))
     .forEach(a => console.log(`  [${a.section}] ${a.title} — ${a.author}`));
 
+  // EPUB is named and dated by *issue* week, matching articles.jsonl — a run on
+  // any weekday (or an ISSUE_DATE backfill) files the book under its issue.
   const now = new Date();
-  const week = getISOWeek(now).toString().padStart(2, '0');
-  const epubName = `dilema-${now.getFullYear()}-W${week}.epub`;
+  const week = getISOWeek(issueDate).toString().padStart(2, '0');
+  const epubName = `dilema-${issueDate.getFullYear()}-W${week}.epub`;
 
   await Bun.write('feed.xml', generateRSS(articles, now));
   console.log('Written feed.xml');
@@ -675,15 +707,21 @@ async function main() {
   await Bun.write('articles.jsonl', jsonl + (jsonl ? '\n' : ''));
   console.log(`Written articles.jsonl (${articles.length} articles, issue ${issueLabel})`);
 
-  process.stdout.write('Fetching magazine cover... ');
-  const cover = await fetchCoverImage();
-  console.log(cover ? `${cover.ext} ${(cover.data.length / 1024).toFixed(0)} KB` : 'not available (using text fallback)');
+  // The homepage only carries the *current* issue's cover and caricature —
+  // wrong for an ISSUE_DATE backfill, which falls back to the text cover.
+  let cover: CoverImage | null = null;
+  let barburisme: CoverImage | null = null;
+  if (!process.env.ISSUE_DATE) {
+    process.stdout.write('Fetching magazine cover... ');
+    cover = await fetchCoverImage();
+    console.log(cover ? `${cover.ext} ${(cover.data.length / 1024).toFixed(0)} KB` : 'not available (using text fallback)');
 
-  process.stdout.write('Fetching Barburisme caricature... ');
-  const barburisme = await fetchBarburismeImage();
-  console.log(barburisme ? `${barburisme.ext} ${(barburisme.data.length / 1024).toFixed(0)} KB` : 'not available');
+    process.stdout.write('Fetching Barburisme caricature... ');
+    barburisme = await fetchBarburismeImage();
+    console.log(barburisme ? `${barburisme.ext} ${(barburisme.data.length / 1024).toFixed(0)} KB` : 'not available');
+  }
 
-  const epub = generateEPUB(articles, now, cover, barburisme);
+  const epub = generateEPUB(articles, issueDate, cover, barburisme);
   await Bun.write(epubName, epub);
   await Bun.write('dilema-latest.epub', epub);
   console.log(`Written ${epubName} + dilema-latest.epub (${(epub.length / 1024).toFixed(0)} KB)`);
