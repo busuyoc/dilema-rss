@@ -70,7 +70,7 @@ async function fetchHtml(url: string): Promise<string> {
   return r.text();
 }
 
-function parseRomanianDate(text: string, fallbackYear?: number): Date | null {
+export function parseRomanianDate(text: string, fallbackYear?: number): Date | null {
   // Full date: "07 Mai 2026"
   const mFull = text.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/i);
   if (mFull) {
@@ -93,7 +93,7 @@ function formatRomanianDate(date: Date): string {
   return `${date.getDate()} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-function getISOWeek(date: Date): number {
+export function getISOWeek(date: Date): number {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
@@ -120,7 +120,7 @@ function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function escapeXml(s: string): string {
+export function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
@@ -142,7 +142,7 @@ const ARTICLE_RE = /href="(\/(?!autor\/|tag\/|abonament|formular|situatiunea)[a-
 // `<i>` icon while still scoping to the same span.
 const TAG_ENTRY_RE = /href="(\/(?!autor\/|tag\/|abonament|formular|situatiunea)[a-z][a-z0-9_-]*\/[a-z0-9_-]{5,})"[\s\S]{0,5000}?<span\s+class="post-date"\s*>[\s\S]{0,200}?(\d{1,2}\s+\w+(?:\s+\d{4})?)/g;
 
-function extractTagEntries(html: string): Map<string, Date> {
+export function extractTagEntries(html: string): Map<string, Date> {
   const entries = new Map<string, Date>();
   const today = new Date();
   today.setHours(23, 59, 59, 999);
@@ -227,7 +227,6 @@ interface Article {
   author: string;
   date: Date;
   section: string;
-  imageUrl: string | null;
   xhtml: string; // clean XHTML for EPUB — plain text paragraphs, guaranteed valid
   text: string;  // same blocks as plain text — consumed by tools/archive via articles.jsonl
 }
@@ -257,14 +256,6 @@ async function fetchArticle(url: string): Promise<FetchResult> {
   const contentDiv = root.querySelector('div.post_content');
   if (!contentDiv) return { status: 'no-content' };
 
-  // Extract featured image (first img with absolute src)
-  let imageUrl: string | null = null;
-  const firstImg = contentDiv.querySelector('img');
-  if (firstImg) {
-    const src = firstImg.getAttribute('src') ?? '';
-    imageUrl = src.startsWith('/') ? BASE + src : src.startsWith('http') ? src : null;
-  }
-
   // Build clean content blocks: plain text per block, no raw HTML from the site.
   // This avoids HTML entities, unclosed void elements, and other XHTML issues.
   const blocks: { tag: string; text: string }[] = [];
@@ -279,7 +270,7 @@ async function fetchArticle(url: string): Promise<FetchResult> {
   const text = blocks.map(b => b.text).join('\n\n');
 
   const section = new URL(url).pathname.split('/')[1] ?? '';
-  return { status: 'ok', article: { url, title, subtitle, author, date, section, imageUrl, xhtml, text } };
+  return { status: 'ok', article: { url, title, subtitle, author, date, section, xhtml, text } };
 }
 
 // ── RSS ──────────────────────────────────────────────────────────────────────
@@ -316,6 +307,38 @@ ${items}
 </rss>`;
 }
 
+// ── OPDS ─────────────────────────────────────────────────────────────────────
+
+// OPDS 1.2 acquisition feed over the issue EPUBs. Any reader with an OPDS
+// browser (KOReader, PocketBook, Calibre) can point at catalog.xml and
+// download issues directly — no custom plugin required.
+export interface CatalogEntry {
+  file: string;    // e.g. "dilema-2026-W29.epub"
+  issue: string;   // e.g. "2026-W29"
+  updated: Date;
+}
+
+export function generateOPDS(entries: CatalogEntry[], buildDate: Date): string {
+  const items = entries.map(e => `
+  <entry>
+    <title>Dilema Veche ${escapeXml(e.issue)}</title>
+    <id>urn:dilema-rss:${escapeXml(e.issue)}</id>
+    <updated>${e.updated.toISOString()}</updated>
+    <link rel="http://opds-spec.org/acquisition"
+          type="application/epub+zip"
+          href="${escapeXml(e.file)}"/>
+  </entry>`).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:dilema-rss:catalog</id>
+  <title>Dilema Veche</title>
+  <updated>${buildDate.toISOString()}</updated>
+  <author><name>dilema-rss</name></author>
+${items}
+</feed>`;
+}
+
 // ── EPUB ─────────────────────────────────────────────────────────────────────
 
 const EPUB_CSS = `
@@ -326,7 +349,6 @@ h3 { font-size: 1em; margin-top: 1.5em; }
 .subtitle { font-style: italic; font-size: 1.05em; margin: 0.3em 0 0.5em; color: #444; }
 .meta { font-size: 0.85em; color: #666; margin-bottom: 1.5em; border-bottom: 1px solid #eee; padding-bottom: 0.8em; }
 .section-label { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 0.3em; }
-.article-img img, .content img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
 blockquote { border-left: 3px solid #ccc; padding-left: 1em; margin-left: 0; font-style: italic; }
 .cover { text-align: center; padding: 4em 1em; }
 .cover h1 { font-size: 2.2em; }
@@ -516,9 +538,6 @@ function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | 
   sorted.forEach((a, idx) => {
     const id = `a${idx}`;
     const label = SECTION_LABELS[a.section] ?? a.section;
-    const imgHtml = a.imageUrl
-      ? `<p class="article-img"><img src="${escapeXml(a.imageUrl)}" alt=""/></p>`
-      : '';
     const subtitleHtml = a.subtitle
       ? `<p class="subtitle">${escapeXml(a.subtitle)}</p>`
       : '';
@@ -527,7 +546,6 @@ function generateEPUB(articles: Article[], buildDate: Date, cover: CoverImage | 
   <h1>${escapeXml(a.title)}</h1>
   ${subtitleHtml}
   <p class="meta">${escapeXml(a.author)} — ${escapeXml(formatRomanianDate(a.date))}</p>
-  ${imgHtml}
   <div class="content">
 ${a.xhtml}
   </div>
@@ -618,13 +636,16 @@ async function main() {
       : getMostRecentThursday();
   // Refuse to build from a stale anchor. When the site's listing dates froze
   // in June–July 2026, this silently re-published the W22 issue as W23–W27
-  // five weeks running. A red CI run beats a wrong issue.
+  // five weeks running. A healthy anchor equals the most recent Thursday
+  // (any weekday's re-run included); the bug showed up as a full week behind
+  // it. Measured against the expected Thursday, not against now, so midweek
+  // re-runs of the current issue stay legitimate.
   if (!process.env.ISSUE_DATE) {
-    const ageDays = (Date.now() - issueDate.getTime()) / 86_400_000;
-    if (ageDays > 6.5) {
+    const lagDays = (getMostRecentThursday().getTime() - issueDate.getTime()) / 86_400_000;
+    if (lagDays > 1) {
       throw new Error(
-        `issue date ${isoDate(issueDate)} is ${ageDays.toFixed(1)} days old — ` +
-        `discovery pages look stale, refusing to build. ` +
+        `issue date ${isoDate(issueDate)} lags the expected issue Thursday by ` +
+        `${lagDays.toFixed(1)} days — discovery pages look stale, refusing to build. ` +
         `(Override by backfilling explicitly with ISSUE_DATE=YYYY-MM-DD.)`,
       );
     }
@@ -725,6 +746,18 @@ async function main() {
   await Bun.write(epubName, epub);
   await Bun.write('dilema-latest.epub', epub);
   console.log(`Written ${epubName} + dilema-latest.epub (${(epub.length / 1024).toFixed(0)} KB)`);
+
+  // OPDS catalog over every issue epub present in the repo, newest first.
+  const epubFiles = (await Array.fromAsync(new Bun.Glob('dilema-2*.epub').scan('.'))).sort().reverse();
+  const catalog = generateOPDS(epubFiles.map(f => ({
+    file: f,
+    issue: f.replace(/^dilema-|\.epub$/g, ''),
+    updated: new Date(Bun.file(f).lastModified),
+  })), now);
+  await Bun.write('catalog.xml', catalog);
+  console.log(`Written catalog.xml (${epubFiles.length} issues)`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+if (import.meta.main) {
+  main().catch(e => { console.error(e); process.exit(1); });
+}
