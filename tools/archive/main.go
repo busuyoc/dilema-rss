@@ -69,17 +69,28 @@ func main() {
 			usage()
 		}
 		cmdIngest(db, args[0])
+		compact(db)
 	case "backfill":
 		if len(args) == 0 {
 			usage()
 		}
 		cmdBackfill(db, args)
+		compact(db)
 	case "search":
 		cmdSearch(db, args)
 	case "stats":
 		cmdStats(db)
 	default:
 		usage()
+	}
+}
+
+// compact merges FTS segments and rewrites the file without free pages. The
+// db is a committed artifact that browsers range-read from Pages, so after a
+// write it should be as small and settled as possible.
+func compact(db *sql.DB) {
+	if _, err := db.Exec(`INSERT INTO articles_fts(articles_fts) VALUES('optimize'); VACUUM`); err != nil {
+		fatal("compact: %v", err)
 	}
 }
 
