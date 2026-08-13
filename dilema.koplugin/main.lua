@@ -227,8 +227,18 @@ function Dilema:performSync()
     end
 
     if #pending == 0 then
-        logger.info("Dilema: up to date at " .. tostring(mark))
-        return { status = "uptodate", newest = mark }
+        -- Nothing newer than the mark. That does not prove the issue is still
+        -- here: the mark records what was fetched, deliberately surviving a
+        -- delete so background syncs never resurrect a finished issue. Check
+        -- the disk before claiming possession, or the report offers to open a
+        -- file that is gone and the button becomes a dead loop.
+        local current = newest[1]
+        if fileExists(BOOKS_DIR .. current) then
+            logger.info("Dilema: up to date at " .. current)
+            return { status = "uptodate", newest = current }
+        end
+        logger.info("Dilema: up to date at " .. current .. ", but it is not on disk")
+        return { status = "missing", newest = current }
     end
 
     local fetched = {}
@@ -317,6 +327,16 @@ function Dilema:report(result)
             ok_callback = function() self:openIssue(result.newest) end,
             cancel_text = _("Close"),
         })
+    elseif result.status == "missing" then
+        -- Deleting a read issue is normal, so this is an offer and never
+        -- automatic: only an explicit tap brings a deleted issue back.
+        UIManager:show(ConfirmBox:new{
+            text = T(_("No new issue. Dilema %1 is the current one, but it is not on the device any more.\n\nDownload it again?"),
+                issueLabel(result.newest)),
+            ok_text = _("Download again"),
+            ok_callback = function() self:refetch(result.newest) end,
+            cancel_text = _("No"),
+        })
     else
         UIManager:show(InfoMessage:new{
             text = T(_("Dilema sync failed.\n\n%1"), result.message or _("Unknown error.")),
@@ -328,6 +348,37 @@ end
 -- ---------------------------------------------------------------------------
 -- entry points
 -- ---------------------------------------------------------------------------
+
+-- Re-download an issue the mark has already passed. Deliberate, user-initiated
+-- only; the mark is left alone because it is already at or beyond this issue.
+function Dilema:refetch(filename)
+    NetworkMgr:runWhenOnline(function()
+        local info = InfoMessage:new{
+            text = T(_("Downloading Dilema %1…"), issueLabel(filename)),
+            timeout = 30,
+        }
+        UIManager:show(info)
+        UIManager:nextTick(function()
+            local net = httpModules()
+            local ok = net and downloadIssue(net, filename, BOOKS_DIR .. filename)
+            UIManager:close(info)
+            if ok then
+                UIManager:show(ConfirmBox:new{
+                    text = T(_("Dilema %1 downloaded again.\n\nSaved in %2"),
+                        issueLabel(filename), BOOKS_DIR),
+                    ok_text = _("Read now"),
+                    ok_callback = function() self:openIssue(filename) end,
+                    cancel_text = _("Later"),
+                })
+            else
+                UIManager:show(InfoMessage:new{
+                    text = T(_("Could not download Dilema %1."), issueLabel(filename)),
+                    icon = "notice-warning",
+                })
+            end
+        end)
+    end)
+end
 
 function Dilema:syncInteractive()
     NetworkMgr:runWhenOnline(function()
@@ -363,6 +414,7 @@ function Dilema:statusText()
     local result = self:settings():readSetting("last_sync_result")
     local outcome = result == "fetched" and _("new issue")
         or result == "uptodate" and _("up to date")
+        or result == "missing" and _("up to date, issue deleted")
         or _("failed")
     return T(_("Last sync: %1 (%2)"), os.date("%d %b, %H:%M", when), outcome)
 end
