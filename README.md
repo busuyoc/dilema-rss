@@ -57,11 +57,24 @@ QuickRSS fetch
    └─ Cache.saveArticles
        └─ broadcastEvent("RSSFetchComplete")
            └─ Dilema:onRSSFetchComplete
-               ├─ HEAD /dilema-latest.epub
-               ├─ compară Last-Modified cu .lastmod local
-               ├─ verifică dacă fișierul țintă există
-               └─ GET → write atomic (tmp + rename) → update .lastmod
+               ├─ GET /catalog.xml
+               ├─ ia cele mai noi MAX_ISSUES numere din catalog
+               ├─ păstrează doar ce e mai nou decît marcajul local
+               └─ pentru fiecare, de la vechi la nou:
+                   GET → write atomic (tmp + rename) → avansează marcajul
 ```
+
+Fiecare număr se salvează sub numele lui datat (`dilema-2026-W33.epub`), niciodată
+peste o cale fixă: KOReader ține coperta (`bookinfo_cache`) și progresul (`.sdr`)
+legate de cale, așa că refolosirea unei singure căi făcea ca fiecare număr nou să
+moștenească coperta și poziția celui vechi.
+
+Marcajul (`dilema_last_issue.txt`) reține cel mai nou număr descărcat vreodată și
+avansează doar înainte. Existența fișierului pe disc nu e suficientă: nu distinge
+„n-am avut niciodată numărul“ de „l-am citit și l-am șters“. Fără marcaj,
+parcurgerea mai multor intrări din catalog ar redescărca numerele șterse intenționat;
+cu el, o săptămînă ratată (deploy Pages eșuat, rulare sărită) ajunge pe device mai
+tîrziu, dar una citită rămîne ștearsă.
 
 Toate stările sunt logate în `crash.log` (`Dilema: ...`).
 
