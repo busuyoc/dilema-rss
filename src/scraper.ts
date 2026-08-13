@@ -364,90 +364,74 @@ interface CoverImage {
   mime: string;
 }
 
-async function fetchCoverImage(): Promise<CoverImage | null> {
-  let html: string;
-  try {
-    html = await fetchHtml(BASE);
-  } catch (e) {
-    console.warn(`cover: homepage fetch failed: ${e instanceof Error ? e.message : e}`);
-    return null;
-  }
+// Cover art and the Barburisme caricature are published at week-addressed URLs:
+// /images/coperta/{week}-{year}.webp and /images/barburisme/{week}-{year}.webp.
+// Deriving the URL from the issue's own week — rather than scraping whatever the
+// homepage currently shows — is what makes the art correct for *this* issue no
+// matter when the build runs. The homepage rotates to the next issue's art up to
+// a day before publication (2026-07-22: W30's cover on W29's homepage) and only
+// ever carries the current issue, so scraping it both mis-stamped midweek
+// rebuilds and left backfilled issues (W28, W29) with no art at all.
+const IMAGE_EXTS = ['webp', 'jpg', 'png'] as const;
 
-  const m = html.match(/(?:src|data-src)="([^"]*\/coperta\/[^"]+\.(?:jpg|jpeg|png|webp))"/i);
-  if (!m) {
-    console.warn('cover: no /coperta/ image URL on homepage');
-    return null;
+// dilema.ro 302s unpublished weeks to `/` and serves the homepage HTML with a
+// 200. It also serves real images with an empty Content-Type, so the response
+// header cannot be trusted either way — identify the bytes themselves.
+export function sniffImage(data: Uint8Array): { ext: 'jpg' | 'png' | 'webp'; mime: string } | null {
+  if (data.length >= 12
+    && data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46
+    && data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) {
+    return { ext: 'webp', mime: 'image/webp' };
   }
-
-  let url = m[1];
-  if (url.startsWith('/')) url = BASE + url;
-  else if (!url.startsWith('http')) url = BASE + '/' + url;
-
-  let r: Response;
-  try {
-    r = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-  } catch (e) {
-    console.warn(`cover: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
-    return null;
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+    return { ext: 'jpg', mime: 'image/jpeg' };
   }
-  if (!r.ok) {
-    console.warn(`cover: ${r.status} for ${url}`);
-    return null;
+  if (data.length >= 8
+    && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47
+    && data[4] === 0x0d && data[5] === 0x0a && data[6] === 0x1a && data[7] === 0x0a) {
+    return { ext: 'png', mime: 'image/png' };
   }
-
-  const data = new Uint8Array(await r.arrayBuffer());
-  const rawExt = (url.match(/\.(jpg|jpeg|png|webp)$/i)?.[1] ?? 'jpg').toLowerCase();
-  const ext = (rawExt === 'jpeg' ? 'jpg' : rawExt) as 'jpg' | 'png' | 'webp';
-  const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'image/webp';
-  return { data, ext, mime };
+  return null;
 }
 
-// Same shape as CoverImage. Barburisme = weekly political caricature gallery; the
-// image filename embeds the ISO week, e.g. /images/barburisme/19-2026.webp.
-async function fetchBarburismeImage(): Promise<CoverImage | null> {
-  let html: string;
-  try {
-    html = await fetchHtml(BASE);
-  } catch (e) {
-    console.warn(`barburisme: homepage fetch failed: ${e instanceof Error ? e.message : e}`);
-    return null;
-  }
+export function issueImageUrl(kind: 'coperta' | 'barburisme', issueDate: Date, ext: string): string {
+  const week = getISOWeek(issueDate).toString().padStart(2, '0');
+  return `${BASE}/images/${kind}/${week}-${issueDate.getFullYear()}.${ext}`;
+}
 
-  // Homepage uses relative URLs like `images/barburisme/19-2026.webp` (no leading
-  // slash). `[^"]*?` is lazy and may be empty to accept that form too.
-  const m = html.match(/(?:src|data-src)="([^"]*?images\/barburisme\/[^"]+\.(?:jpg|jpeg|png|webp))"/i);
-  if (!m) {
-    console.warn('barburisme: no images/barburisme/ image URL on homepage');
-    return null;
-  }
+async function fetchIssueImage(kind: 'coperta' | 'barburisme', issueDate: Date): Promise<CoverImage | null> {
+  for (const ext of IMAGE_EXTS) {
+    const url = issueImageUrl(kind, issueDate, ext);
+    let r: Response;
+    try {
+      r = await fetch(url, {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        // A 3xx here means "this week has no art" — following it lands on the
+        // homepage and would embed 120 KB of HTML as the cover image.
+        redirect: 'manual',
+      });
+    } catch (e) {
+      console.warn(`${kind}: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
+      return null;
+    }
+    if (r.status >= 300 && r.status < 400) continue;  // not published under this ext
+    if (r.status === 404) continue;
+    if (!r.ok) {
+      console.warn(`${kind}: ${r.status} for ${url}`);
+      return null;
+    }
 
-  let url = m[1];
-  if (url.startsWith('/')) url = BASE + url;
-  else if (!url.startsWith('http')) url = BASE + '/' + url;
-
-  let r: Response;
-  try {
-    r = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-  } catch (e) {
-    console.warn(`barburisme: fetch ${url} failed: ${e instanceof Error ? e.message : e}`);
-    return null;
+    const data = new Uint8Array(await r.arrayBuffer());
+    const kindOf = sniffImage(data);
+    if (!kindOf) {
+      console.warn(`${kind}: ${url} returned ${data.length} bytes that are not an image`);
+      continue;
+    }
+    return { data, ext: kindOf.ext, mime: kindOf.mime };
   }
-  if (!r.ok) {
-    console.warn(`barburisme: ${r.status} for ${url}`);
-    return null;
-  }
-
-  const data = new Uint8Array(await r.arrayBuffer());
-  const rawExt = (url.match(/\.(jpg|jpeg|png|webp)$/i)?.[1] ?? 'jpg').toLowerCase();
-  const ext = (rawExt === 'jpeg' ? 'jpg' : rawExt) as 'jpg' | 'png' | 'webp';
-  const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : 'image/webp';
-  return { data, ext, mime };
+  console.warn(`${kind}: no image published for the issue week`);
+  return null;
 }
 
 function xhtmlPage(title: string, body: string): Uint8Array {
@@ -728,24 +712,16 @@ async function main() {
   await Bun.write('articles.jsonl', jsonl + (jsonl ? '\n' : ''));
   console.log(`Written articles.jsonl (${articles.length} articles, issue ${issueLabel})`);
 
-  // The homepage only carries the *current* issue's cover and caricature —
-  // and it rotates to the next issue's art up to a day before Thursday
-  // publication (observed 2026-07-22: W30's cover on W29's homepage). Only
-  // trust it when building on the issue's own day; backfills and late
-  // rebuilds get the text cover instead of the wrong week's artwork.
-  const coverTrusted = !process.env.ISSUE_DATE
-    && (now.getTime() - issueDate.getTime()) / 86_400_000 <= 1;
-  let cover: CoverImage | null = null;
-  let barburisme: CoverImage | null = null;
-  if (coverTrusted) {
-    process.stdout.write('Fetching magazine cover... ');
-    cover = await fetchCoverImage();
-    console.log(cover ? `${cover.ext} ${(cover.data.length / 1024).toFixed(0)} KB` : 'not available (using text fallback)');
+  // Both are addressed by the issue's own week, so a backfill or a midweek
+  // rebuild gets this issue's art rather than whatever the homepage happens to
+  // be showing. No date gate is needed: the URL cannot name the wrong issue.
+  process.stdout.write('Fetching magazine cover... ');
+  const cover = await fetchIssueImage('coperta', issueDate);
+  console.log(cover ? `${cover.ext} ${(cover.data.length / 1024).toFixed(0)} KB` : 'not available (using text fallback)');
 
-    process.stdout.write('Fetching Barburisme caricature... ');
-    barburisme = await fetchBarburismeImage();
-    console.log(barburisme ? `${barburisme.ext} ${(barburisme.data.length / 1024).toFixed(0)} KB` : 'not available');
-  }
+  process.stdout.write('Fetching Barburisme caricature... ');
+  const barburisme = await fetchIssueImage('barburisme', issueDate);
+  console.log(barburisme ? `${barburisme.ext} ${(barburisme.data.length / 1024).toFixed(0)} KB` : 'not available');
 
   const epub = generateEPUB(articles, issueDate, cover, barburisme);
   await Bun.write(epubName, epub);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   parseRomanianDate, getISOWeek, escapeXml, extractTagEntries,
-  generateOPDS,
+  generateOPDS, sniffImage, issueImageUrl,
 } from './scraper';
 
 describe('parseRomanianDate', () => {
@@ -111,5 +111,54 @@ describe('generateOPDS', () => {
     expect(xml.match(/<feed[\s>]/g)?.length).toBe(1);
     expect(xml.match(/<\/feed>/g)?.length).toBe(1);
     expect(xml).not.toContain('&&');
+  });
+});
+
+
+describe('issueImageUrl', () => {
+  test('addresses art by the issue week, zero-padded', () => {
+    // 2026-07-09 is the Thursday of ISO week 28.
+    expect(issueImageUrl('coperta', new Date(2026, 6, 9), 'webp'))
+      .toBe('https://www.dilema.ro/images/coperta/28-2026.webp');
+  });
+
+  test('same scheme for the caricature', () => {
+    expect(issueImageUrl('barburisme', new Date(2026, 7, 13), 'webp'))
+      .toBe('https://www.dilema.ro/images/barburisme/33-2026.webp');
+  });
+
+  test('a late rebuild still names the issue week, not the build week', () => {
+    // Backfilling W28 in August must not ask for August's cover.
+    expect(issueImageUrl('coperta', new Date(2026, 6, 9), 'webp')).toContain('/28-2026.');
+  });
+});
+
+describe('sniffImage', () => {
+  const webp = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0]);
+  const jpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0]);
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
+
+  test('identifies webp, jpeg and png by magic bytes', () => {
+    expect(sniffImage(webp)?.ext).toBe('webp');
+    expect(sniffImage(jpg)?.ext).toBe('jpg');
+    expect(sniffImage(png)?.ext).toBe('png');
+  });
+
+  test('mime types match the extension', () => {
+    expect(sniffImage(webp)?.mime).toBe('image/webp');
+    expect(sniffImage(jpg)?.mime).toBe('image/jpeg');
+    expect(sniffImage(png)?.mime).toBe('image/png');
+  });
+
+  test('rejects the homepage HTML served for an unpublished week', () => {
+    // dilema.ro 302s a missing cover to `/`; the body is the homepage. This is
+    // the check that keeps 120 KB of HTML from being embedded as cover.webp.
+    const html = new TextEncoder().encode('<!DOCTYPE html>\n<html lang="ro">');
+    expect(sniffImage(html)).toBeNull();
+  });
+
+  test('rejects empty and truncated responses', () => {
+    expect(sniffImage(new Uint8Array(0))).toBeNull();
+    expect(sniffImage(new Uint8Array([0x52, 0x49, 0x46, 0x46]))).toBeNull();  // RIFF, no WEBP
   });
 });
