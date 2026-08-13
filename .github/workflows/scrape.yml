@@ -15,12 +15,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Deep enough for the guard below to see past any hand-pushed commits
+          # that landed after the morning's feed commit.
+          fetch-depth: 20
 
-      # The 16:00 retry cron must not duplicate a successful 10:00 run.
+      # The 16:00 retry cron must not duplicate a successful 10:00 run. Scanning
+      # recent history rather than HEAD alone: any commit pushed after the feed
+      # commit would otherwise hide it and trigger a pointless re-scrape.
       - name: Skip if today's feed already committed
         id: guard
         run: |
-          if git log -1 --format=%s | grep -qx "feed: $(date -u +%Y-%m-%d)"; then
+          if git log --format=%s -20 | grep -qx "feed: $(date -u +%Y-%m-%d)"; then
             echo "Feed already committed today — skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
