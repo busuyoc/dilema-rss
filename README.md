@@ -13,31 +13,58 @@ Pe device, după un fetch în QuickRSS, plugin-ul descarcă silent noul EPUB.
 
 ## Instalare
 
-Ai nevoie de KOReader + [QuickRSS](https://github.com/qewer33/quickrss.koplugin).
+Ai nevoie doar de KOReader. Niciun alt plugin, niciun patch.
 
-**1. Adaugă feed-ul în QuickRSS:**
-```
-https://busuyoc.github.io/dilema-rss/feed.xml
-```
+**1. Copiază `dilema.koplugin/`** din repo în `applications/koreader/plugins/` pe device.
 
-**2. Instalează plugin-ul** — copiază `dilema.koplugin/` din repo în `applications/koreader/plugins/` pe device.
+**2. Copiază `icons/dilema.svg`** în `applications/koreader/icons/` — directorul e căutat
+înaintea setului inclus, deci nu suprascrii nimic.
 
-**3. Patch QuickRSS** (până la merge upstream): în `quickrss.koplugin/modules/ui/feed_view.lua`, adaugă la imports:
-```lua
-local Event = require("ui/event")
-```
-și după `Cache.saveArticles(articles)` în `_fetch()`:
-```lua
-UIManager:broadcastEvent(Event:new("RSSFetchComplete"))
-```
+**3. Restart KOReader.**
 
-**4. Restart KOReader.**
+**4. Leagă acțiunea de un buton** (opțional). Plugin-ul înregistrează două acțiuni în
+Dispatcher-ul standard, deci apar oriunde KOReader permite acțiuni:
+
+- *Dilema: fetch new issue* — descarcă numărul nou și te întreabă dacă îl deschizi
+- *Dilema: open latest issue* — deschide direct ultimul număr de pe device
+
+Le poți lega la un gest (Settings → Gestures), la un profil, sau — dacă folosești un
+launcher gen zenUI — la un buton propriu în navbar, cu iconul de mai sus. Nimic din
+plugin nu depinde de un anumit launcher; pe KOReader simplu funcționează prin gest sau
+din meniu (Tools → Dilema).
 
 ## Folosire
 
-Deschide QuickRSS → fetch. Articolele apar în reader-ul de feed-uri pentru citit rapid. În paralel, EPUB-ul ajunge în `/mnt/ext1/books/dilema-latest.epub` (sau echivalentul pe device-ul tău) — îl deschizi pentru experiență full: copertă, cuprins navigabil pe secțiuni, format curat.
+Apeși butonul. Plugin-ul verifică catalogul și îți spune ce s-a întîmplat:
 
-Săptămâna următoare, fetch din nou. Dacă nu e nimic nou, plugin-ul nu descarcă (verifică `Last-Modified`). Zero traffic, zero baterie irosită.
+- **număr nou** → se descarcă, apoi „Dilema 2026-W34 downloaded. Saved in /mnt/ext1/books/“
+  cu opțiunea *Read now*
+- **nimic nou** → „No new issue — you already have Dilema 2026-W33“, tot cu opțiunea de a-l
+  deschide
+- **eroare** → mesaj explicit (catalog inaccesibil, descărcare eșuată)
+
+Nu există apăsare fără răspuns: fiecare rulare interactivă se termină ori cu cartea pe
+ecran, ori cu o propoziție care spune de ce nu. Meniul (Tools → Dilema) arată și cînd a
+fost ultima sincronizare și cum s-a terminat.
+
+În fundal, plugin-ul mai încearcă o sincronizare cînd se conectează la rețea
+(`NetworkConnected`, eveniment nativ KOReader), cel mult o dată la 6 ore, și tace dacă nu
+e nimic nou.
+
+Numerele stau ca fișiere obișnuite în `/mnt/ext1/books/`, deci apar în biblioteca normală.
+
+## Arhiva completă (opțional)
+
+Plugin-ul aduce doar numerele noi. Dacă vrei un număr vechi, repo-ul publică și un catalog
+OPDS 1.2 peste toate numerele, iar KOReader are cititor OPDS inclus:
+
+```
+Settings → OPDS catalog → add
+https://busuyoc.github.io/dilema-rss/catalog.xml
+```
+
+Funcționează și din Calibre sau PocketBook OS. E o alternativă, nu o dependență — nimic din
+fluxul de mai sus nu trece prin OPDS.
 
 ---
 
