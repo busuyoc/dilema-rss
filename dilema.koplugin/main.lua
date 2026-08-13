@@ -17,8 +17,9 @@ local MAX_ISSUES  = 4
 -- overwriting a fixed path. KOReader keys cover thumbnails (bookinfo cache)
 -- and reading progress (the .sdr sidecar) on the file path, so re-using one
 -- path made every new issue inherit the previous issue's cover, title and
--- reading position. A dated file is a genuinely new book; "already have this
--- week" becomes a simple file-exists check and no .lastmod state is needed.
+-- reading position. A dated file is a genuinely new book, so freshness is a
+-- question about names rather than about HTTP validators — the old
+-- Last-Modified/.lastmod dance is gone.
 
 local Dilema = WidgetContainer:extend{
     name = "dilema",
