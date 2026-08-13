@@ -32,6 +32,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run tests
+        if: steps.guard.outputs.skip != 'true'
         run: bun test
 
       - name: Run scraper
@@ -43,11 +44,13 @@ jobs:
       # The book must be spec-valid before it ships to a device. A malformed
       # EPUB fails the run here instead of failing on the reader on Thursday.
       - uses: actions/setup-java@v4
+        if: steps.guard.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Validate EPUB
+        if: steps.guard.outputs.skip != 'true'
         run: |
           curl -fsSL -o epubcheck.zip https://github.com/w3c/epubcheck/releases/download/v5.1.0/epubcheck-5.1.0.zip
           unzip -q epubcheck.zip
