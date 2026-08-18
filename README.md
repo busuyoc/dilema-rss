@@ -1,5 +1,10 @@
 # Dilema RSS
 
+> **Status (august 2026): înghețat.** Acest repo e prototipul de referință — merge
+> în continuare săptămânal, dar dezvoltarea s-a oprit. Rescrierea de la zero, ca
+> motor multi-sursă, e specificată în [`docs/rebuild/`](docs/rebuild/); linkul
+> către noul repo va apărea aici cînd există.
+
 Scraper săptămânal pentru articolele din **Dilema Veche**. Generează un feed RSS și un EPUB (cu coperta oficială și sumar pe secțiuni), livrate prin GitHub Pages. Plugin KOReader le sincronizează automat pe device — joi după-amiază ai noul număr deja descărcat.
 
 ## Cum funcționează
