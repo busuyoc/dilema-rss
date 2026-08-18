@@ -116,9 +116,13 @@ declared in `sections[]` still appear in the book, bucketed at the end (the
 prototype's `sectionOrder` fallback exists because Dilema adds new columns —
 a new slug must never silently vanish from the EPUB). So the vocabulary needs
 either an explicit `{ kind: "rest" }` slot or a defined engine default of
-appending undeclared sections after the last slot — decide in the Phase 1
-spec, and pin it with a fixture test (article in an unknown slug → present in
-the render).
+appending undeclared sections after the last slot. **Settled — both:** a
+`rest` slot places the bucket; when omitted, the engine appends it at the end,
+so leaving it out can move articles, never lose them. Working, tested
+semantics in `docs/rebuild/reference/layout.ts` (the tests there are the
+required regression cases); adopt that code, don't re-derive from prose. The
+injectable image-fetch layer is likewise implemented in
+`docs/rebuild/reference/images.ts`.
 
 ### Data model: flat text is truth, binaries are derived
 
