@@ -43,6 +43,7 @@ func usage() {
 commands:
   ingest <articles.jsonl>   upsert the scraper's weekly output
   backfill <epub ...>       seed historical issues from generated EPUBs
+  feedurls <feed.xml>       fill missing article URLs from a feed.xml snapshot
   search [-n 10] <query>    FTS5 search (supports AND, OR, NEAR, "phrase")
   stats                     totals per issue, section and author
 `)
@@ -75,6 +76,12 @@ func main() {
 			usage()
 		}
 		cmdBackfill(db, args)
+		compact(db)
+	case "feedurls":
+		if len(args) != 1 {
+			usage()
+		}
+		cmdFeedURLs(db, args[0])
 		compact(db)
 	case "search":
 		cmdSearch(db, args)
