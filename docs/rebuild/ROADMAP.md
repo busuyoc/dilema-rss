@@ -6,6 +6,21 @@ should read as a story: *specified → tested → built → hardened → operate
 generalized*. Don't start phase N+1 with phase N's checklist unfinished — a
 half-wired feature was exactly the prototype's disease (AUDIT.md #1–#3).
 
+**Scope for the Oct 2026 job fair (~2.5 months out, target 1-2 weeks of actual
+work on this project — it's one of several portfolio pieces).** Phases 0–3 are
+the real deliverable: bootstrap, core pipeline + adapter, renderers, hardened
+CI/CD. That alone is a working pipeline, real tests, hardened CI, a published
+key-gated artifact — enough to defend in an interview. Phases 4–8 (archive/
+search, device plugin, ops polish, second source, exhibit polish) are stretch:
+keep going only if there's appetite left after 0–3 land solid. Don't let
+stretch-phase ambition dilute the depth of 0–3.
+
+**Division of labor for Phase 1 specifically:** the owner hand-writes the core
+pipeline and adapter logic (discover/extract/issue-anchor, the regression
+tests) rather than delegating it — this is the deliberate TS-internals
+learning rep, not just the TDD showcase. Scaffolding, CI config, and renderer
+boilerplate (Phases 0, 2, 3) are fine for the AI worker to draft for review.
+
 ## Phase 0 — Bootstrap: the repo is professional before it is useful
 Repo skeleton: Bun workspaces, Biome, strict TS, `AGENTS.md`/`CLAUDE.md`,
 `docs/specs/` + `docs/adr/` seeded with the already-made decisions
@@ -80,7 +95,7 @@ to Dilema's publisher, leading with the tool, closing with the RSS/site offer.
   in the PR or tag message. No untracked files, no manual steps left behind.
 
 ## Prototype closeout (this repo, before the rewrite starts)
-Two-minute fixes so the frozen reference isn't broken mid-gesture: wire
-`feedurls` into `tools/archive/main.go`, commit `feed.go`,
-`backfill-urls.sh`, and `dilema-2026-W28.epub`. Then add a README pointer to the
-new repo and freeze.
+**Done, 2026-08-18:** `feedurls` wired and committed alongside `feed.go`,
+`backfill-urls.sh` and the W28 EPUB; archive backfilled to a complete W19–W33
+with URLs filled from feed history; README carries the freeze notice. Only the
+new-repo link in the README remains, once the repo exists.

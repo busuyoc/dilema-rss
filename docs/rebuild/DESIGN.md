@@ -76,18 +76,49 @@ The core never knows about Dilema. A source is a module implementing:
 ```ts
 interface Source {
   id: string;                       // "dilema"
-  discover(fetch): AsyncIterable<Candidate>;   // listing pages → {url, hintDate?}
+  discover(fetch): AsyncIterable<Candidate>;   // listing pages OR RSS feed → {url, hintDate?}
   extract(html, url): Extracted;               // → title, author, section, date, blocks
   issueAnchor(candidates): Date;               // what week "this issue" is
   issueArt?(issue, fetch): Promise<Image[]>;   // cover, caricature…
-  sections: SectionSpec[];                     // ordering + labels
+  sections: SectionSpec[];                     // per-section labels/tagging
+  layout: LayoutSlot[];                        // full ordered book structure, this source's call
 }
+
+type LayoutSlot =
+  | { kind: "cover" }
+  | { kind: "toc" }
+  | { kind: "art"; ref: string }        // e.g. a caricature, keyed by issueArt() id
+  | { kind: "section"; id: string };    // references sections[]
 ```
 
 Everything the prototype hardcoded (SECTIONS, EXTRA_TAGS, the regexes, the
 dossier-anchor rule, cover URL scheme) becomes one adapter file. A second adapter
 (any weekly with listing pages) is a roadmap milestone precisely because it
 proves the interface isn't a lie.
+
+`discover` is deliberately unopinionated about mechanism: an HTML-listing-crawl
+adapter and an RSS-feed-parsing adapter both just produce `AsyncIterable<Candidate>`.
+Some future sources may already publish real RSS, making their `discover` nearly
+trivial — if a second RSS-based source is ever added, factor out a shared
+`rssDiscovery(feedUrl)` helper then, not preemptively.
+
+**The book's structure is not assumed to be shared across sources.** The engine
+defines the `LayoutSlot` vocabulary (the primitives a renderer knows how to
+place); each adapter declares its *own* full ordered sequence. There is no
+engine-level template hardcoding "cover → TOC → caricature → sections" — that
+would bake in an assumption about magazine-format convention before a second
+source exists to test it, which is exactly what Phase 7's "zero core changes"
+acceptance criterion is meant to catch. A source with no caricature just omits
+that slot; nothing upstream needs to change.
+
+One rule the layout must keep from the prototype: articles in a section *not*
+declared in `sections[]` still appear in the book, bucketed at the end (the
+prototype's `sectionOrder` fallback exists because Dilema adds new columns —
+a new slug must never silently vanish from the EPUB). So the vocabulary needs
+either an explicit `{ kind: "rest" }` slot or a defined engine default of
+appending undeclared sections after the last slot — decide in the Phase 1
+spec, and pin it with a fixture test (article in an unknown slug → present in
+the render).
 
 ### Data model: flat text is truth, binaries are derived
 
@@ -101,7 +132,33 @@ proves the interface isn't a lie.
   back issue on the next deploy.
 - Rendering is deterministic: same jsonl in, byte-comparable artifacts out
   (fixed timestamps from issue metadata, stable ordering). Determinism is what
-  makes golden-file tests and build provenance meaningful.
+  makes golden-file tests and build provenance meaningful. Precisely scoped,
+  since images are fetched at render time: the render function is pure over
+  *(jsonl + fetched bytes)*, with the fetch layer injectable — tests and
+  `bun run preview` supply recorded/local bytes and stay byte-stable; a live
+  deploy is deterministic only insofar as the source still serves the same
+  images (see the accepted best-effort-degradation risk below).
+- **Per-article images.** Article `blocks` may include an `{ kind: "image", src,
+  alt? }` element. Consistent with flat-text-truth: jsonl stores the image
+  *URL*, never bytes; the renderer fetches and embeds bytes at build time, same
+  as any other derived artifact. Images are rendered with `max-width: 100%;
+  height: auto` so they reflow to the device's text width regardless of native
+  size or aspect ratio — no per-source layout tuning needed for this.
+  **If a fetch fails (404, source removed it), the image block is silently
+  dropped** — no broken-image glyph, no alt-text placeholder standing in for
+  it. This is a named regression case, not an edge case to leave undefined:
+  a fixture test (dead image URL → clean render, no artifact of the failure)
+  is required before this ships. Because every deploy rebuilds every issue
+  from its jsonl, a source changing/removing an old image is a real risk for
+  back issues — accepted as best-effort degradation (matches the project's
+  no-extra-ops-infra stance) rather than solved with an out-of-git image cache;
+  revisit only if it becomes a frequent problem in practice.
+- **Local preview loop.** A `bun run preview <issue>.jsonl` command renders an
+  EPUB locally from any jsonl file, no CI/deploy round-trip. This is the fix
+  for the prototype's slowest feedback loop (tune a layout/order rule → commit
+  → push → wait for the workflow → download the EPUB → check on-device or in
+  a reader). Iteration on layout, section order, and art placement should
+  happen against this command and fixture jsonl, not against live deploys.
 
 ### Renderers
 

@@ -93,8 +93,26 @@ and I can explain every file that exists.
 
 ## Open items that need my input when they come up
 
-- Repo/engine name.
+- Repo/engine name: leaning **kiosk** (Romanian-flavored, not scraper/EPUB/
+  Dilema-scoped, evokes a stand carrying multiple publications — fits the
+  multi-source direction). Not yet locked; check GitHub/npm availability
+  before committing. Fallbacks if taken: `kiosk-engine`, `press-kiosk`.
 - Second-source timing (Observator Cultural — Phase 7, not before).
-- Whether to run the old repo's `backfill-urls.sh` before freezing it (pending;
-  low value if the rewrite re-derives the archive anyway).
 - Outreach message to Dilema's publisher — Phase 8, drafted with me, sent by me.
+
+## 2026-08-18 planning session — decisions made, see `SESSION-2026-08-18-DECISIONS.md`
+
+Prototype closeout is done (old repo frozen, archive backfilled, README points
+here). A planning conversation before Phase 0 refined several DESIGN.md/
+ROADMAP.md sections — read `SESSION-2026-08-18-DECISIONS.md` for the full
+reasoning; the docs themselves already carry the resulting decisions:
+- RSS-based `discover` is a first-class adapter shape, not a separate port.
+- Source contract gains `layout: LayoutSlot[]` — full book structure declared
+  per-adapter against an engine-defined vocabulary, no shared hardcoded template.
+- Per-article images: URL in jsonl, bytes fetched/embedded at render time,
+  failed fetch silently drops the block (no broken-image glyph, no alt text
+  stand-in), responsive CSS handles arbitrary aspect ratios.
+- A local `bun run preview <issue>.jsonl` command is required early — this is
+  the fix for the prototype's slow tune-and-redeploy loop on layout/order.
+- Scope for the Oct job fair: Phases 0–3 are the real deliverable; 4–8 are
+  stretch. Phase 1 core/adapter logic is hand-written by the owner, not delegated.
