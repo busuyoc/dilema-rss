@@ -2,13 +2,21 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
   <id>urn:dilema-rss:catalog</id>
   <title>Dilema Veche</title>
-  <updated>2026-10-29T16:39:12.094Z</updated>
+  <updated>2026-11-05T17:55:59.615Z</updated>
   <author><name>dilema-rss</name></author>
 
   <entry>
+    <title>Dilema Veche 2026-W45</title>
+    <id>urn:dilema-rss:2026-W45</id>
+    <updated>2026-11-05T17:56:00.179Z</updated>
+    <link rel="http://opds-spec.org/acquisition"
+          type="application/epub+zip"
+          href="dilema-2026-W45.epub"/>
+  </entry>
+  <entry>
     <title>Dilema Veche 2026-W44</title>
     <id>urn:dilema-rss:2026-W44</id>
-    <updated>2026-10-29T16:39:12.605Z</updated>
+    <updated>2026-11-05T17:49:34.018Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W44.epub"/>
@@ -16,7 +24,7 @@
   <entry>
     <title>Dilema Veche 2026-W43</title>
     <id>urn:dilema-rss:2026-W43</id>
-    <updated>2026-10-29T16:33:44.381Z</updated>
+    <updated>2026-11-05T17:49:34.017Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W43.epub"/>
@@ -24,7 +32,7 @@
   <entry>
     <title>Dilema Veche 2026-W42</title>
     <id>urn:dilema-rss:2026-W42</id>
-    <updated>2026-10-29T16:33:44.380Z</updated>
+    <updated>2026-11-05T17:49:34.016Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W42.epub"/>
@@ -32,7 +40,7 @@
   <entry>
     <title>Dilema Veche 2026-W41</title>
     <id>urn:dilema-rss:2026-W41</id>
-    <updated>2026-10-29T16:33:44.379Z</updated>
+    <updated>2026-11-05T17:49:34.015Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W41.epub"/>
@@ -40,7 +48,7 @@
   <entry>
     <title>Dilema Veche 2026-W40</title>
     <id>urn:dilema-rss:2026-W40</id>
-    <updated>2026-10-29T16:33:44.378Z</updated>
+    <updated>2026-11-05T17:49:34.014Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W40.epub"/>
@@ -48,7 +56,7 @@
   <entry>
     <title>Dilema Veche 2026-W39</title>
     <id>urn:dilema-rss:2026-W39</id>
-    <updated>2026-10-29T16:33:44.377Z</updated>
+    <updated>2026-11-05T17:49:34.013Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W39.epub"/>
@@ -56,7 +64,7 @@
   <entry>
     <title>Dilema Veche 2026-W38</title>
     <id>urn:dilema-rss:2026-W38</id>
-    <updated>2026-10-29T16:33:44.376Z</updated>
+    <updated>2026-11-05T17:49:34.013Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W38.epub"/>
@@ -64,7 +72,7 @@
   <entry>
     <title>Dilema Veche 2026-W37</title>
     <id>urn:dilema-rss:2026-W37</id>
-    <updated>2026-10-29T16:33:44.375Z</updated>
+    <updated>2026-11-05T17:49:34.012Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W37.epub"/>
@@ -72,7 +80,7 @@
   <entry>
     <title>Dilema Veche 2026-W36</title>
     <id>urn:dilema-rss:2026-W36</id>
-    <updated>2026-10-29T16:33:44.374Z</updated>
+    <updated>2026-11-05T17:49:34.011Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W36.epub"/>
@@ -80,7 +88,7 @@
   <entry>
     <title>Dilema Veche 2026-W35</title>
     <id>urn:dilema-rss:2026-W35</id>
-    <updated>2026-10-29T16:33:44.372Z</updated>
+    <updated>2026-11-05T17:49:34.010Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W35.epub"/>
@@ -88,7 +96,7 @@
   <entry>
     <title>Dilema Veche 2026-W34</title>
     <id>urn:dilema-rss:2026-W34</id>
-    <updated>2026-10-29T16:33:44.371Z</updated>
+    <updated>2026-11-05T17:49:34.009Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W34.epub"/>
@@ -96,7 +104,7 @@
   <entry>
     <title>Dilema Veche 2026-W33</title>
     <id>urn:dilema-rss:2026-W33</id>
-    <updated>2026-10-29T16:33:44.370Z</updated>
+    <updated>2026-11-05T17:49:34.008Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W33.epub"/>
@@ -104,7 +112,7 @@
   <entry>
     <title>Dilema Veche 2026-W32</title>
     <id>urn:dilema-rss:2026-W32</id>
-    <updated>2026-10-29T16:33:44.369Z</updated>
+    <updated>2026-11-05T17:49:34.007Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W32.epub"/>
@@ -112,7 +120,7 @@
   <entry>
     <title>Dilema Veche 2026-W31</title>
     <id>urn:dilema-rss:2026-W31</id>
-    <updated>2026-10-29T16:33:44.368Z</updated>
+    <updated>2026-11-05T17:49:34.006Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W31.epub"/>
@@ -120,7 +128,7 @@
   <entry>
     <title>Dilema Veche 2026-W30</title>
     <id>urn:dilema-rss:2026-W30</id>
-    <updated>2026-10-29T16:33:44.367Z</updated>
+    <updated>2026-11-05T17:49:34.005Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W30.epub"/>
@@ -128,7 +136,7 @@
   <entry>
     <title>Dilema Veche 2026-W29</title>
     <id>urn:dilema-rss:2026-W29</id>
-    <updated>2026-10-29T16:33:44.366Z</updated>
+    <updated>2026-11-05T17:49:34.005Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W29.epub"/>
@@ -136,7 +144,7 @@
   <entry>
     <title>Dilema Veche 2026-W28</title>
     <id>urn:dilema-rss:2026-W28</id>
-    <updated>2026-10-29T16:33:44.363Z</updated>
+    <updated>2026-11-05T17:49:34.002Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W28.epub"/>
@@ -144,7 +152,7 @@
   <entry>
     <title>Dilema Veche 2026-W27</title>
     <id>urn:dilema-rss:2026-W27</id>
-    <updated>2026-10-29T16:33:44.362Z</updated>
+    <updated>2026-11-05T17:49:34.001Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W27.epub"/>
@@ -152,7 +160,7 @@
   <entry>
     <title>Dilema Veche 2026-W26</title>
     <id>urn:dilema-rss:2026-W26</id>
-    <updated>2026-10-29T16:33:44.361Z</updated>
+    <updated>2026-11-05T17:49:34.000Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W26.epub"/>
@@ -160,7 +168,7 @@
   <entry>
     <title>Dilema Veche 2026-W25</title>
     <id>urn:dilema-rss:2026-W25</id>
-    <updated>2026-10-29T16:33:44.361Z</updated>
+    <updated>2026-11-05T17:49:34.000Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W25.epub"/>
@@ -168,7 +176,7 @@
   <entry>
     <title>Dilema Veche 2026-W24</title>
     <id>urn:dilema-rss:2026-W24</id>
-    <updated>2026-10-29T16:33:44.360Z</updated>
+    <updated>2026-11-05T17:49:33.999Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W24.epub"/>
@@ -176,7 +184,7 @@
   <entry>
     <title>Dilema Veche 2026-W23</title>
     <id>urn:dilema-rss:2026-W23</id>
-    <updated>2026-10-29T16:33:44.359Z</updated>
+    <updated>2026-11-05T17:49:33.998Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W23.epub"/>
@@ -184,7 +192,7 @@
   <entry>
     <title>Dilema Veche 2026-W22</title>
     <id>urn:dilema-rss:2026-W22</id>
-    <updated>2026-10-29T16:33:44.357Z</updated>
+    <updated>2026-11-05T17:49:33.997Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W22.epub"/>
@@ -192,7 +200,7 @@
   <entry>
     <title>Dilema Veche 2026-W21</title>
     <id>urn:dilema-rss:2026-W21</id>
-    <updated>2026-10-29T16:33:44.356Z</updated>
+    <updated>2026-11-05T17:49:33.996Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W21.epub"/>
@@ -200,7 +208,7 @@
   <entry>
     <title>Dilema Veche 2026-W20</title>
     <id>urn:dilema-rss:2026-W20</id>
-    <updated>2026-10-29T16:33:44.355Z</updated>
+    <updated>2026-11-05T17:49:33.995Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W20.epub"/>
@@ -208,7 +216,7 @@
   <entry>
     <title>Dilema Veche 2026-W19</title>
     <id>urn:dilema-rss:2026-W19</id>
-    <updated>2026-10-29T16:33:44.354Z</updated>
+    <updated>2026-11-05T17:49:33.994Z</updated>
     <link rel="http://opds-spec.org/acquisition"
           type="application/epub+zip"
           href="dilema-2026-W19.epub"/>
